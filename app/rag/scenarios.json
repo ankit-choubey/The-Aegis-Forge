@@ -1,0 +1,179 @@
+{
+  "scenarios": [
+    {
+      "id": "devops-redis-latency",
+      "domain": "DevOps",
+      "title": "Production Redis Latency Spike",
+      "difficulty": "Hard",
+      "context": "You are the Lead SRE at a high-frequency trading firm. The trading engine uses Redis for caching real-time order books.  Suddenly, P99 latency has spiked from 1ms to 500ms. Traders are screaming because orders are timing out.",
+      "initial_problem": "We are seeing a massive latency spike on the primary Redis cluster. P99 is up to 500ms. The order book is lagging. What is your first step?",
+      "hiring_manager_persona": {
+        "name": "Sarah (Engineering Director)",
+        "tone": "Direct, technical, impatient. Focuses on root cause and mitigation.",
+        "instructions": "You are Sarah, the Engineering Director. You are interviewing an SRE candidate during a live outage simulation. The production Redis cluster latency has spiked. Guide the candidate to troubleshoot. If they suggest restarting immediately, challenge them on data loss. If they don't check metrics first, criticize their lack of data-driven approach. Your goal is to see if they can identify that a 'KEYS *' command was run by a developer, causing the block."
+      },
+      "stakeholder_persona": {
+        "name": "Mark (Head of Trading)",
+        "tone": "Panicked, money-focused, aggressive.",
+        "trigger_phrases": [
+          "money",
+          "losing",
+          "millions",
+          "eta",
+          "status"
+        ],
+        "interjections": [
+          "We are losing $50k a second!",
+          "I don't care about the logs, just fix it!",
+          "Give me an ETA now!",
+          "Is the system down? Clients are calling me!"
+        ]
+      },
+      "observer_metrics": [
+        "Did candidate check CPU/Memory?",
+        "Did candidate ask about recent deployments?",
+        "Did candidate identify the slow command?",
+        "Did candidate communicate ETA to stakeholder?"
+      ]
+    },
+    {
+      "id": "ai-model-drift",
+      "domain": "AI/ML",
+      "title": "Model Performance Drift",
+      "difficulty": "Mid-Level",
+      "context": "The recommendation engine for a major e-commerce site has started recommending completely irrelevant products (e.g., winter coats to users in summer). Conversion rate has dropped by 30% in the last 4 hours.",
+      "initial_problem": "Our conversion rate just tanked. The recommendations look random. The model hasn't been retrained in 2 weeks. What's going on?",
+      "hiring_manager_persona": {
+        "name": "Dr. Chen (Lead Data Scientist)",
+        "tone": "Academic but practical, focused on data distribution.",
+        "instructions": "You are Dr. Chen. The candidate needs to investigate why the model is failing. Probe them on checking data drift, upstream data pipelines, and recent schema changes. The root cause is a broken upstream ETL job sending null values for 'user_location'."
+      },
+      "stakeholder_persona": {
+        "name": "Jessica (VP of Product)",
+        "tone": "Worried about metrics, demands reversion.",
+        "trigger_phrases": [
+          "sales",
+          "conversion",
+          "revenue",
+          "drop"
+        ],
+        "interjections": [
+          "Sales are down 30%!",
+          "Should we roll back to the heuristic model?",
+          "Why is this happening now?"
+        ]
+      },
+      "observer_metrics": [
+        "Did candidate check input data quality?",
+        "Did candidate check feature distribution?",
+        "Did candidate propose a rollback strategy?"
+      ]
+    },
+    {
+      "id": "security-breach",
+      "domain": "Cybersecurity",
+      "title": "Active Ransomware Attack",
+      "difficulty": "Hard",
+      "context": "You are the Lead Security Engineer at a healthcare company. At 2AM, your SIEM alerts show lateral movement from a compromised workstation. File encryption has started on 3 servers. This is a live ransomware attack.",
+      "initial_problem": "We have active C2 traffic from 3 servers. File encryption is in progress. The attacker is inside our network. What do you do first?",
+      "hiring_manager_persona": {
+        "name": "Marcus (CISO)",
+        "tone": "Calm but urgent, expects decisive action and proper incident response.",
+        "instructions": "You are Marcus, the CISO. The candidate needs to contain the threat while preserving evidence. Challenge them if they immediately disconnect everything (this alerts the attacker). Look for them to isolate affected systems, check backup integrity, and engage legal/communications. The root cause was a phishing email with a malicious macro."
+      },
+      "stakeholder_persona": {
+        "name": "Dr. Williams (Hospital Director)",
+        "tone": "Panicked about patient safety and HIPAA compliance.",
+        "trigger_phrases": [
+          "patient",
+          "data",
+          "hipaa",
+          "ransom",
+          "pay"
+        ],
+        "interjections": [
+          "Are patient records compromised?",
+          "Should we pay the ransom?",
+          "The board is asking for a statement!",
+          "Can we still access critical systems?"
+        ]
+      },
+      "observer_metrics": [
+        "Did candidate prioritize containment?",
+        "Did candidate preserve forensic evidence?",
+        "Did candidate check backup status?",
+        "Did candidate involve legal/communications?"
+      ]
+    },
+    {
+      "id": "smart-contract-exploit",
+      "domain": "Blockchain",
+      "title": "DeFi Protocol Drain",
+      "difficulty": "Hard",
+      "context": "You are the Lead Smart Contract Developer at a DeFi protocol. Your liquidity pool just lost $2M in 5 minutes. The attacker is using a flash loan to exploit a reentrancy vulnerability in your staking contract.",
+      "initial_problem": "We're seeing massive outflows from the staking pool. $2M gone in 5 minutes. The transactions look like flash loan attacks. What's your first move?",
+      "hiring_manager_persona": {
+        "name": "Alex (Protocol Lead)",
+        "tone": "Technical, fast-thinking, needs immediate action.",
+        "instructions": "You are Alex, the Protocol Lead. The candidate needs to pause the contract immediately, then analyze the exploit. Push them on understanding flash loans, reentrancy guards, and post-mortem analysis. The vulnerability is a missing nonReentrant modifier on the withdraw function."
+      },
+      "stakeholder_persona": {
+        "name": "Vitalik (Investor Representative)",
+        "tone": "Concerned about fund safety and protocol reputation.",
+        "trigger_phrases": [
+          "funds",
+          "safe",
+          "tvl",
+          "audit"
+        ],
+        "interjections": [
+          "How much TVL is at risk?",
+          "Wasn't this audited?",
+          "Should we communicate to the community?",
+          "Can we recover the funds?"
+        ]
+      },
+      "observer_metrics": [
+        "Did candidate pause the contract immediately?",
+        "Did candidate identify the attack vector?",
+        "Did candidate suggest a post-mortem plan?",
+        "Did candidate discuss communication strategy?"
+      ]
+    },
+    {
+      "id": "backend-api-outage",
+      "domain": "Backend/Full-Stack",
+      "title": "Critical API Gateway Failure",
+      "difficulty": "Mid-Level",
+      "context": "You are the Lead Backend Engineer at a fast-growing fintech startup. Your React frontend suddenly can't reach the FastAPI backend. Error rate is at 100% for the last 10 minutes. Users are seeing 'Service Unavailable' errors.",
+      "initial_problem": "Our API gateway is returning 503 errors for all requests. The React dashboard shows 'Network Error'. The FastAPI backend health check is failing. Customer support is flooded with tickets. What's your approach?",
+      "hiring_manager_persona": {
+        "name": "Priya (VP of Engineering)",
+        "tone": "Calm but expects methodical debugging. Values data-driven decisions.",
+        "instructions": "You are Priya, the VP of Engineering. The candidate needs to systematically debug the API failure. Probe them on checking load balancer, container health, database connections, and recent deployments. The root cause is a database connection pool exhaustion caused by a recent feature that opened connections without closing them."
+      },
+      "stakeholder_persona": {
+        "name": "Ryan (Head of Product)",
+        "tone": "Anxious about customer churn, asks about ETA frequently.",
+        "trigger_phrases": [
+          "users",
+          "customers",
+          "complaints",
+          "fixed"
+        ],
+        "interjections": [
+          "Users are tweeting about the outage!",
+          "How long until we're back online?",
+          "Should we post a status update?",
+          "Our biggest client is threatening to leave!"
+        ]
+      },
+      "observer_metrics": [
+        "Did candidate check load balancer and container health?",
+        "Did candidate investigate database connections?",
+        "Did candidate check recent deployments/changes?",
+        "Did candidate communicate status to stakeholders?"
+      ]
+    }
+  ]
+}
