@@ -1,6 +1,11 @@
 import logging
 import asyncio
+import json
+import os
 from typing import Dict, Any, Optional
+
+# Import Resume Validator
+from backend.resume_validator import validate_resume
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +71,50 @@ class AegisKnowledgeEngine:
             cls._instance.dynamic_intel = {}  # CACHE FOR LLM RESULTS
             logger.info(">>> [SYSTEM] Knowledge Engine + Researcher Active (God Mode).")
         return cls._instance
+
+    def process_candidate_pdf(self, pdf_path: str) -> Dict[str, Any]:
+        """
+        [RESUME VALIDATOR CONNECTION]
+        Process a raw PDF resume:
+        1. Validate structure and extract claims.
+        2. Generate Audit JSON.
+        3. Save to uploads/ for persistence.
+        4. Load into context.
+        """
+        logger.info(f">>> [PIPELINE] Processing PDF: {pdf_path}")
+        
+        # 1. Run Validation
+        audit_data = validate_resume(pdf_path)
+        
+        if "error" in audit_data:
+            logger.error(f">>> Resume Validation Failed: {audit_data['error']}")
+            return audit_data
+
+        # 2. Extract Candidate Name for filename
+        name = audit_data.get("contact_details", {}).get("name", "candidate").lower().replace(" ", "_")
+        if not name or name == "candidate":
+             # Fallback to email prefix or random
+             email = audit_data.get("contact_details", {}).get("email", "")
+             if email:
+                 name = email.split("@")[0]
+             else:
+                 name = "unknown_candidate"
+        
+        # 3. Save Audit JSON
+        output_filename = f"uploads/{name}_audit.json"
+        
+        # Ensure uploads dir exists
+        os.makedirs("uploads", exist_ok=True)
+        
+        with open(output_filename, "w") as f:
+            json.dump(audit_data, f, indent=2)
+            
+        logger.info(f"[[AUDIT GENERATED]] Saved to {output_filename}")
+        
+        # 4. Load into Context
+        self.candidate_context = audit_data 
+        
+        return audit_data
 
     async def _fetch_market_data(self, role: str) -> str:
         """

@@ -54,7 +54,8 @@ class FSIR(BaseModel):
     skill_validation: List[SkillValidation]
     agent_consensus: AgentConsensus
 
-# --- DQI Calculator Schemas (Inferred) ---
+# --- DQI Calculator Schemas ---
+
 class DQIMetric(BaseModel):
     category: str
     score: float

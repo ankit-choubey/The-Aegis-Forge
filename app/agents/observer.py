@@ -56,10 +56,16 @@ class ObserverAgent(AegisAgentBase):
              stream = self.model.chat(chat_ctx=chat_ctx)
              full_response = ""
              async for chunk in stream:
-                 if chunk.choices:
-                     delta = chunk.choices[0].delta.content
-                     if delta:
-                         full_response += delta
+                 content = None
+                 # Try standard LiveKit agent structure
+                 if hasattr(chunk, 'choices') and chunk.choices:
+                     content = chunk.choices[0].delta.content
+                 # Fallback for alternative chunk structures
+                 elif hasattr(chunk, 'content'):
+                     content = chunk.content
+                 
+                 if content:
+                     full_response += content
              
              with open("debug.log", "a") as f:
                  f.write(f"LLM RESPONSE: {full_response}\n")

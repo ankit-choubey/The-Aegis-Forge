@@ -17,14 +17,14 @@ export default function Avatar() {
     // Find the agent's audio track reference (for the AudioTrack component)
     const agentTrackRef = tracks.find(t =>
         t.participant.identity !== 'candidate' &&
-        (t.source === Track.Source.Microphone || t.track?.kind === 'audio')
+        (t.source === Track.Source.Microphone || t.publication?.track?.kind === 'audio')
     );
 
     useEffect(() => {
-        if (agentTrackRef && agentTrackRef.track) {
+        if (agentTrackRef && agentTrackRef.publication?.track) {
             console.log("Audio Visualizer: Agent Audio Find:", agentTrackRef.participant.identity);
 
-            const track = agentTrackRef.track;
+            const track = agentTrackRef.publication.track;
             // Handle both standard Track and RemoteAudioTrack
             const mediaStreamTrack = (track as any).mediaStreamTrack || (track as any).receiver?.track;
 

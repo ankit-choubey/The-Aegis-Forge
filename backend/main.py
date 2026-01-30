@@ -6,6 +6,7 @@ import uuid
 import logging
 import os
 import shutil
+import io # <--- Added
 from pathlib import Path
 
 # IMPORTS (The Trinity)
@@ -209,6 +210,11 @@ async def start_interview_session(request: InterviewStartRequest):
     }
 
 
+# ...
+from fastapi.responses import StreamingResponse
+from app.analysis.pipeline import InterviewPipeline
+from app.analysis.pdf_generator import PDFReportGenerator
+
 @app.get("/candidate/{candidate_id}")
 async def get_candidate(candidate_id: str):
     """Get candidate audit details."""
@@ -216,6 +222,61 @@ async def get_candidate(candidate_id: str):
         raise HTTPException(status_code=404, detail="Candidate not found")
     
     return candidate_audits[candidate_id]
+
+
+@app.get("/download-report/{candidate_id}")
+async def download_report(candidate_id: str):
+    """
+    Generate and download the PDF report for a candidate.
+    """
+    if candidate_id not in candidate_audits:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+    
+    candidate_data = candidate_audits[candidate_id]
+    audit_log = candidate_data.get("audit", {}).get("audit_log", [])
+    
+    # 1. Run Analysis Pipeline (On-the-fly)
+    # We construct a data dict simulating the real input needed by the pipeline
+    # For now, we pass the raw audit, assuming the pipeline handles it or we mock the DQI part
+    # In a real run, DQI is calculated. Here we might need to mock if missing.
+    
+    pipeline = InterviewPipeline()
+    
+    # Mocking data structure required by generate_detailed_report
+    # It expects: {"dqi_calculation": {...}, "audit_log": [...]}
+    # We try to pull dqi from audit if exists, or use defaults
+    dqi_data = candidate_data.get("audit", {}).get("dqi", {
+        "overall_score": 85, 
+        "breakdown": {"score": 85, "correct_decisions": 6, "recoverable_mistakes": 1}
+    })
+    
+    pipeline_input = {
+        "dqi_calculation": dqi_data,
+        "audit_log": audit_log if isinstance(audit_log, list) else [] # audit_log might be missing or raw
+    }
+    
+    try:
+        # Generate the FSIR Pydantic Object
+        fsir = pipeline.generate_detailed_report(candidate_id, pipeline_input)
+        fsir_dict = fsir.model_dump()
+        
+        # Inject candidate ID explicitly if missing
+        fsir_dict['candidate_id'] = candidate_id
+        
+        # 2. Generate PDF
+        pdf_gen = PDFReportGenerator()
+        pdf_bytes = pdf_gen.generate_report_bytes(fsir_dict)
+        
+        # 3. Stream Response
+        filename = f"Aegis_Report_{candidate_id}.pdf"
+        return StreamingResponse(
+            io.BytesIO(pdf_bytes),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        logger.error(f"Report Generation Failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Report Generation Failed: {e}")
 
 
 # ============================================

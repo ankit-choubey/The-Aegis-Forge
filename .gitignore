@@ -191,3 +191,7 @@ __pycache__/
 .DS_Store
 *.log
 uploads/
+fsir_*.json
+fsir_*.pdf
+questions_*.json
+*.pdf

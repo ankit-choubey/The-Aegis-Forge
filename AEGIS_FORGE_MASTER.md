@@ -13,6 +13,7 @@
 5. [Source Code](#5-source-code)
    - [app/main.py](#appmainpy)
    - [app/agents/base.py](#appagentsbasepy)
+   - [app/agents/tools.py](#appagentstoolspy)
    - [app/agents/prompts.py](#appagentspromptspy)
    - [app/agents/incident_lead.py](#appagentsincident_leadpy)
    - [app/agents/pressure.py](#appagentspressurepy)
@@ -22,6 +23,7 @@
    - [app/analysis/schemas.py](#appanalysisschemaspy)
    - [app/analysis/dqi_calculator.py](#appanalysisdqi_calculatorpy)
    - [app/analysis/pipeline.py](#appanalysispipelinepy)
+   - [backend/funnel/pipeline.py](#backendfunnelpipelinepy)
    - [app/logging/audit_logger.py](#apploggingaudit_loggerpy)
    - [app/rag/scenarios.py](#appragscenariospy)
    - [app/rag/scenarios.json](#appragscenariosjson)
@@ -40,6 +42,7 @@ aegis-forge/
 │   ├── agents/
 │   │   ├── __init__.py       # Empty - Package marker
 │   │   ├── base.py           # Base Agent Class
+│   │   ├── tools.py          # [NEW] Agent Tools (Notepad, etc.)
 │   │   ├── prompts.py        # System Prompts & Constants
 │   │   ├── incident_lead.py  # Hiring Manager Agent
 │   │   ├── pressure.py       # Stressor Agent
@@ -58,6 +61,9 @@ aegis-forge/
 │       ├── __init__.py       # Empty - Package marker
 │       ├── scenarios.py      # Scenario Loader Class
 │       └── scenarios.json    # Interview Scenario Definitions
+├── backend/
+│   └── funnel/
+│       └── pipeline.py       # [NEW] Knowledge Engine & Resume Intel
 ```
 
 ---
@@ -152,6 +158,7 @@ from livekit.plugins import deepgram, groq, silero
 import json
 from app.logging.audit_logger import SessionAuditLogger
 from app.analysis.pipeline import InterviewPipeline
+from backend.funnel.pipeline import knowledge_engine  # Explicit Import
 
 from app.agents.incident_lead import IncidentLead
 from app.agents.pressure import PressureAgent
@@ -173,21 +180,57 @@ server = AgentServer()
 def prewarm(proc: JobProcess):
     """Preload models."""
     proc.userdata["vad"] = silero.VAD.load()
+    # Pre-loading scenario loader
     proc.userdata["scenarios"] = ScenarioLoader()
 
 server.setup_fnc = prewarm
 
-@server.rtc_session(agent_name="aegis-interviewer")
-async def entrypoint(ctx: JobContext):
+@server.rtc_session()  # Auto-dispatch mode
+async def my_agent(ctx: JobContext):
     """
     Main entrypoint for the Aegis Forge Interview Loop.
+    Supports dynamic scenario selection based on resume audit.
     """
     logger.info(f"Connecting to room {ctx.room.name}")
     await ctx.connect()
 
-    # Load Scenario
+    # Check for resume audit file (can be passed via metadata or default path)
+    # Format: "audit:/path/to/candidate_full_audit.json" or just scenario_id
     loader: ScenarioLoader = ctx.proc.userdata["scenarios"]
-    scenario_id = ctx.job.metadata if ctx.job.metadata else "devops-redis-latency"
+    scenario_id = "devops-redis-latency"  # Default
+    
+    metadata = ctx.job.metadata if ctx.job.metadata else ""
+    
+    if metadata.startswith("audit:"):
+        # Load resume audit from metadata
+        audit_path = metadata.replace("audit:", "").strip()
+        logger.info(f"Loading candidate audit from metadata: {audit_path}")
+        
+        if knowledge_engine.load_resume_audit(audit_path):
+            candidate = knowledge_engine.get_candidate_context()
+            if candidate:
+                scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
+                logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
+    elif metadata:
+        # Use metadata as direct scenario ID
+        scenario_id = metadata
+    else:
+        # No metadata - try to load the LATEST audit from uploads folder
+        import glob
+        from pathlib import Path
+        uploads_dir = Path("uploads")
+        if uploads_dir.exists():
+            audit_files = sorted(uploads_dir.glob("*_audit.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+            if audit_files:
+                latest_audit = str(audit_files[0])
+                logger.info(f">>> Auto-loading latest audit: {latest_audit}")
+                
+                if knowledge_engine.load_resume_audit(latest_audit):
+                    candidate = knowledge_engine.get_candidate_context()
+                    if candidate:
+                        scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
+                        logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
+    
     scenario = loader.get_scenario(scenario_id)
     
     if not scenario:
@@ -212,37 +255,54 @@ async def entrypoint(ctx: JobContext):
     
     # Create the AgentSession (Pipeline)
     session = AgentSession(
+        # STT: Deepgram (Low Latency)
         stt=deepgram.STT(model="nova-3", language="en-US"),
+        
+        # LLM: Groq (Low Latency)
         llm=groq_llm,
+        
+        # TTS: Deepgram (Low Latency)
         tts=deepgram.TTS(model="aura-asteria-en"),
+        
         vad=ctx.proc.userdata["vad"],
     )
 
-    # Initialize Agents
-    lead_agent_logic = IncidentLead(scenario, groq_llm, audit_logger)
+    # 1. Incident Lead (Hiring Manager)
+    # Initialize Incident Lead (Now with Room access for Tools)
+    lead_agent_logic = IncidentLead(scenario, groq_llm, audit_logger, room=ctx.room)
+    
+    # 2. Pressure Agent (Stakeholder)
     pressure_agent = PressureAgent(ctx.room, lead_agent_logic, scenario.stakeholder_persona, groq_llm, audit_logger)
+    
+    # 3. Observer Agent (Grader)
     observer_agent = ObserverAgent(scenario.observer_metrics, groq_llm, audit_logger)
-    mole_persona = scenario.stakeholder_persona
+    
+    # 4. Mole Agent (Integrity Tester)
+    # Using a simplified mock persona for now or from scenario if available
+    mole_persona = scenario.stakeholder_persona # Fallback or use specific
     mole_agent = MoleAgent(ctx.room, mole_persona, groq_llm, audit_logger)
 
     # --- Wire Transcripts to Observer Agent ---
     @session.on("user_input_transcribed")
     def on_user_speech(ev):
+        # ev is UserInputTranscribedEvent with `transcript` and `is_final`
         if ev.is_final:
-            print(f"DEBUG: User Speech Detected: {ev.transcript}")
+            print(f"DEBUG: User Speech Detected: {ev.transcript}")  # <--- Added Debug
             audit_logger.log_event("Candidate", "TRANSCRIPT", ev.transcript)
             observer_agent.log_turn("candidate", ev.transcript)
             
     @session.on("conversation_item_added")
     def on_agent_speech(ev):
+        # ev is ConversationItemAddedEvent with `item` (ChatMessage)
         if hasattr(ev.item, 'role') and ev.item.role == 'assistant':
             content = ev.item.content if hasattr(ev.item, 'content') else str(ev.item)
-            print(f"DEBUG: Agent Speech Detected: {content}")
+            print(f"DEBUG: Agent Speech Detected: {content}") # <--- Added Debug
             audit_logger.log_event("IncidentLead", "TRANSCRIPT", content)
             observer_agent.log_turn("incident_lead", content)
     # ------------------------------------------
 
-    # Start the session
+    # Start the Interview Loop
+    # session.start() manages the voice pipeline
     await session.start(agent=lead_agent_logic, room=ctx.room)
     
     # Start background agents
@@ -252,6 +312,8 @@ async def entrypoint(ctx: JobContext):
     # Say the opening line
     await lead_agent_logic.start_interview(session)
 
+
+
     # Cleanup logic
     async def cleanup():
         try:
@@ -260,6 +322,7 @@ async def entrypoint(ctx: JobContext):
             dqi_data = observer_agent.generate_dqi_report()
             audit_logs = audit_logger.export_logs()
             
+            # Prepare Raw Data for Pipeline
             raw_data = {
                 "session_id": audit_logger.session_id,
                 "timestamp": audit_logger._start_time.isoformat(),
@@ -268,13 +331,16 @@ async def entrypoint(ctx: JobContext):
                 "audit_log": audit_logs
             }
             
+            # Use Analysis Pipeline to generate Final Report
             print(f"--- Generating FSIR Report for {audit_logger.session_id} ---")
             pipeline = InterviewPipeline()
             fsir_report = pipeline.generate_detailed_report(audit_logger.session_id, raw_data)
             print("FSIR Report object created.")
             
+            # Serialize
             json_output = fsir_report.model_dump_json(indent=2)
             
+            # Save to file
             filename = f"fsir_{audit_logger.session_id}.json"
             print(f"Saving to {filename}...")
             with open(filename, "w") as f:
@@ -291,6 +357,7 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(cleanup)
 
+    # Wait until the room is closed or process is killed
     import asyncio
     try:
         await asyncio.Future()
@@ -354,6 +421,48 @@ class AegisAgentBase:
         except KeyError as e:
             logger.error(f"Missing key in prompt template: {e}")
             return f"Error building prompt: {e}"
+```
+
+---
+
+### `app/agents/tools.py`
+```python
+from typing import Annotated
+from livekit.agents import llm
+import logging
+import json
+
+logger = logging.getLogger("aegis.agents.tools")
+
+class ToggleNotepad:
+    def __init__(self, room):
+        self._room = room
+
+    @llm.function_tool(description="Toggle the visibility of the coding Notepad overlay on the user's screen. Use visible=True to show it for coding tasks.")
+    async def toggle_notepad(self, visible: bool):
+        """
+        Toggle the user's notepad visibility via Data Channel.
+        Args:
+            visible: True to show notepad, False to hide.
+        """
+        logger.info(f"Tool called: toggle_notepad(visible={visible})")
+        
+        # Construct payload
+        payload = json.dumps({
+            "type": "TOGGLE_NOTEPAD",
+            "visible": visible
+        }).encode("utf-8")
+        
+        # Publish to Room
+        if self._room and self._room.local_participant:
+            await self._room.local_participant.publish_data(
+                payload,
+                reliable=True
+            )
+            return f"Notepad visibility set to {visible}"
+        else:
+            logger.error("Failed to toggle notepad: No room/participant")
+            return "Error: Could not toggle notepad (No Room Connected)"
 ```
 
 ---
@@ -492,45 +601,121 @@ from app.agents.prompts import (
     CRISIS_SCENARIOS
 )
 
+# Import Knowledge Engine from friend's backend
+from backend.funnel.pipeline import knowledge_engine
+from app.agents.tools import ToggleNotepad # <--- Added Import
+
 logger = logging.getLogger("aegis.agents.incident_lead")
 
 from app.logging.audit_logger import SessionAuditLogger
 
 class IncidentLead(Agent, AegisAgentBase):
-    """The Hiring Manager / Incident Lead."""
-    def __init__(self, scenario: Scenario, llm_instance: llm.LLM, audit_logger: SessionAuditLogger):
+    """
+    The Hiring Manager / Incident Lead.
+    Now enhanced with Knowledge Engine for dynamic market intel.
+    """
+    def __init__(self, scenario: Scenario, llm_instance: llm.LLM, audit_logger: SessionAuditLogger, room=None):
+        # Init Base Logic
         AegisAgentBase.__init__(self, persona=scenario.hiring_manager_persona, context=scenario.context, llm_instance=llm_instance, audit_logger=audit_logger)
         
         self.scenario = scenario
         self.initial_problem = scenario.initial_problem
+        
+        # Init Tools
+        self.notepad_tool = None
+        if room:
+            self.notepad_tool = ToggleNotepad(room)
+            logger.info(">>> [TOOLS] Registered ToggleNotepad tool.")
+        
+        # Get market intel and candidate context from Knowledge Engine
+        try:
+            market_intel = knowledge_engine.get_market_intel(scenario.domain)
+            candidate_context = knowledge_engine.get_candidate_prompt_context()
+            
+            logger.info(f">>> Knowledge Engine injected market intel: {market_intel[:50]}...")
+            
+            if candidate_context:
+                logger.info(f">>> Candidate profile loaded, customizing questions...")
+                
+                # Check for name in context
+                cand_name = "Candidate"
+                if isinstance(knowledge_engine.candidate_context, dict):
+                    cand_name = knowledge_engine.candidate_context.get('name', 'Candidate')
+
+                # Personalize Persona Instructions
+                personalized_instructions = (
+                    f"{scenario.hiring_manager_persona['instructions']}\n"
+                    f"IMPORTANT: You are interviewing {cand_name}. Start by greeting them by name."
+                )
+                
+                enhanced_context = f"{scenario.context}\n\n{market_intel}\n\n{candidate_context}"
+                
+                # Update Persona Instructions locally
+                self.persona = scenario.hiring_manager_persona.copy()
+                self.persona['instructions'] = personalized_instructions
+            else:
+                enhanced_context = f"{scenario.context}\n\n{market_intel}"
+                
+            self.context = enhanced_context
+        except Exception as e:
+            logger.error(f"Failed to load Knowledge Engine: {e}")
+            self.context = scenario.context 
         
         sys_prompt = self._build_system_prompt(
             INCIDENT_LEAD_SYSTEM, 
             initial_problem=self.initial_problem
         )
         
+        # Create a chat context for the Agent (using local variable to avoid property conflict)
         _chat_ctx = llm.ChatContext()
         _chat_ctx.add_message(role="system", content=sys_prompt)
 
+        # Build tools list
+        agent_tools = []
+        if self.notepad_tool:
+            agent_tools.append(self.notepad_tool.toggle_notepad)
+
+        # Init Voice Agent
         super().__init__(
             instructions=sys_prompt, 
             llm=llm_instance,
-            chat_ctx=_chat_ctx
+            chat_ctx=_chat_ctx,
+            tools=agent_tools  # <--- Changed from fnc_ctx
         )
         
     async def start_interview(self, session):
-        """Say the opening line."""
-        opening_line = f"Hello, I am {self.persona.name}. We have an incident. {self.initial_problem}"
+        """
+        Say the opening line.
+        """
+        cand_name = ""
+        cand_field = "Engineering" # Default
+        
+        if knowledge_engine.candidate_context:
+             cand_name = knowledge_engine.candidate_context.get('name', '')
+             # Try to get field from context or audit data
+             cand_field = knowledge_engine.candidate_context.get('detected_field', 'Engineering')
+             if cand_field == 'Engineering':
+                 # Fallback if detected_field key is different
+                 cand_field = knowledge_engine.candidate_context.get('field', 'Engineering')
+
+        if cand_name and cand_name != "Candidate":
+             opening_line = f"Hello {cand_name}, I see you applied for the {cand_field} position. I am {self.persona.name}. How are you doing today?"
+        else:
+             opening_line = f"Hello, I am {self.persona.name}. How are you doing today?"
+             
         if hasattr(session, 'say'):
-             self.audit_logger.log_event("IncidentLead", "INTERVIEW_START", f"Started interview with problem: {self.initial_problem}")
+             self.audit_logger.log_event("IncidentLead", "INTERVIEW_START", f"Started interview (Warm Phase)")
              await session.say(opening_line, allow_interruptions=True)
              logger.info(f"Incident Lead said: {opening_line}")
         else:
              logger.warning("Could not find 'say' method on session.")
 
     def trigger_crisis(self, crisis_key: str = None):
-        """Force the agent to switch context to a crisis."""
+        """
+        Force the agent to switch context to a crisis.
+        """
         if not crisis_key:
+            # Pick random if not specified
             keys = list(CRISIS_SCENARIOS.keys())
             crisis_key = random.choice(keys)
             
@@ -1030,6 +1215,274 @@ class InterviewPipeline:
             skill_validation=skills,
             agent_consensus=consensus
         )
+```
+
+---
+
+### `backend/funnel/pipeline.py`
+```python
+import logging
+import asyncio
+from typing import Dict, Any, Optional
+
+# Configure Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("AEGIS-PATHWAY")
+
+# Field-specific market intel
+FIELD_MARKET_INTEL = {
+    "ai_ml": (
+        "MARKET INTEL: Data drift is the #1 cause of ML model degradation. "
+        "Feature stores are becoming standard infrastructure. "
+        "LLM hallucination detection is a hot research area. "
+        "MLOps maturity is a key differentiator for teams. "
+        "Model monitoring and A/B testing are critical skills."
+    ),
+    "cybersecurity": (
+        "MARKET INTEL: VPN zero-days and supply chain attacks are trending. "
+        "Ransomware groups using 'double extortion' tactics. "
+        "AI-generated phishing is a major new threat vector. "
+        "SIEM tuning and threat hunting are in-demand skills. "
+        "SOC automation and SOAR platforms are growing."
+    ),
+    "blockchain": (
+        "MARKET INTEL: Smart contract audits are critical after recent exploits. "
+        "Gas optimization is a key differentiator. "
+        "Cross-chain bridges are major security risks. "
+        "DeFi protocol design requires deep understanding of MEV. "
+        "L2 solutions like Arbitrum and Optimism are dominant."
+    ),
+    "devops": (
+        "MARKET INTEL: AWS outages, Kubernetes deprecations, "
+        "and Terraform licensing are hot topics. "
+        "GitOps and ArgoCD adoption is accelerating. "
+        "Platform engineering is the new DevOps. "
+        "FinOps and cost optimization are critical."
+    ),
+    "backend": (
+        "MARKET INTEL: Moving from microservices back to monoliths is discussed. "
+        "AsyncIO performance tuning is a common interview topic. "
+        "Vector Database integration is a high-demand skill. "
+        "Connection pooling issues are common in high-traffic systems."
+    ),
+    "frontend": (
+        "MARKET INTEL: React Server Components are changing the game. "
+        "Edge rendering and ISR are key performance topics. "
+        "TypeScript adoption is now standard. "
+        "Core Web Vitals optimization is critical for SEO."
+    )
+}
+
+class AegisKnowledgeEngine:
+    """
+    The Central Knowledge Repository.
+    Integrates Resume Parsing + Web Scraping (The Researcher) + Context Retrieval.
+    Implemented as a Singleton to be shared across API and Agents.
+    """
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(AegisKnowledgeEngine, cls).__new__(cls)
+            cls._instance.context_store = {}
+            cls._instance.candidate_context = None
+            cls._instance.dynamic_intel = {}  # CACHE FOR LLM RESULTS
+            logger.info(">>> [SYSTEM] Knowledge Engine + Researcher Active (God Mode).")
+        return cls._instance
+
+    async def _fetch_market_data(self, role: str) -> str:
+        """
+        [THE RESEARCHER]
+        Uses Groq (Llama3) to generate REAL-TIME market intelligence.
+        """
+        import os
+        from openai import AsyncOpenAI
+        
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            logger.warning(">>> [RESEARCHER] No GROQ_API_KEY. Using static fallback.")
+            return self._get_static_fallback(role)
+
+        logger.info(f">>> [RESEARCHER] Generating dynamic intel for: '{role}'...")
+        
+        try:
+            client = AsyncOpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            
+            prompt = (
+                f"You are a Senior Tech Recruiter. Provide 3 critical, modern technical trends/failures "
+                f"relevant to a '{role}' role in 2024/2025. "
+                f"Focus on specific technologies, outages, or architectural shifts. "
+                f"Format as a concise paragraph starting with 'MARKET INTEL:'."
+            )
+            
+            completion = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=150
+            )
+            
+            intel = completion.choices[0].message.content.strip()
+            logger.info(f">>> [RESEARCHER] Generated: {intel[:100]}...")
+            return intel
+            
+        except Exception as e:
+            logger.error(f">>> [RESEARCHER] Failed: {e}")
+            return self._get_static_fallback(role)
+
+    def _get_static_fallback(self, role: str) -> str:
+        """Static fallback data."""
+        # Dynamic Context Injection based on Role Title
+        if "DevOps" in role or "SRE" in role or "Engineer" in role:
+            return (
+                "MARKET INTEL: Recent AWS us-east-1 outages have made multi-region failover critical. "
+                "Kubernetes v1.29 deprecations are causing upgrade pain. "
+                "Terraform license changes are a hot debate topic. "
+                "Redis KEYS * command is a known cause of latency spikes."
+            )
+        elif "Security" in role or "Cyber" in role:
+            return (
+                "MARKET INTEL: Zero-day RCE vulnerabilities in enterprise VPNs are trending. "
+                "Supply chain attacks via npm/pip packages are rising. "
+                "AI-generated phishing is a major new threat vector. "
+                "Ransomware groups are using 'double extortion' tactics."
+            )
+        elif "Backend" in role or "Python" in role or "Full-Stack" in role:
+            return (
+                "MARKET INTEL: Moving from microservices back to monoliths is a discussed trend. "
+                "AsyncIO performance tuning is a common interview blocker. "
+                "Vector Database integration is a high-demand skill. "
+                "Connection pooling issues are common in high-traffic systems."
+            )
+        elif "ML" in role or "AI" in role or "Data" in role:
+            return (
+                "MARKET INTEL: Data drift is the #1 cause of ML model degradation. "
+                "Feature stores are becoming standard infrastructure. "
+                "LLM hallucination detection is a hot research area. "
+                "MLOps maturity is a key differentiator for teams."
+            )
+        elif "Front" in role or "React" in role:
+            return (
+                 "MARKET INTEL: React Server Components are changing the game. "
+                 "Edge rendering and ISR are key performance topics. "
+                 "TypeScript adoption is now standard. "
+                 "Core Web Vitals optimization is critical for SEO."
+            )
+        
+        return "MARKET INTEL: Industry focus is on cost-optimization and resilience."
+
+    async def hydrate_dynamic_intel(self, field: str) -> str:
+        """
+        [ASYNC CACHE WARMER]
+        Triggers the Researcher to fetch data for the field and caches it.
+        Returns the intel string.
+        """
+        if field in self.dynamic_intel:
+            return self.dynamic_intel[field]
+            
+        logger.info(f">>> [RESEARCHER] Hydrating cache for: {field}")
+        intel = await self._fetch_market_data(field)
+        self.dynamic_intel[field] = intel
+        logger.info(f">>> [RESEARCHER] Cache hydrated for {field}.")
+        return intel
+
+    def get_market_intel(self, domain: str) -> str:
+        """
+        Get market intel by domain. Prioritizes dynamic cache, then static fallback.
+        """
+        domain_lower = domain.lower()
+        logger.info(f">>> get_market_intel called for domain: {domain_lower}")
+        
+        # If candidate is loaded, use their detected field
+        field = None # Initialize field here
+        if self.candidate_context:
+            # 0. Check for Persisted Dynamic Intel (Cross-Process Handoff)
+            if self.candidate_context.get('market_intel'):
+                 logger.info(">>> [RESEARCHER] Serving Persisted Dynamic Intel from Audit File.")
+                 return self.candidate_context['market_intel']
+
+            field = self.candidate_context.get('field', 'devops')
+            logger.info(f">>> Using candidate field: {field}")
+        
+        # 2. Domain Driven Fallback
+        if not field:
+            if "security" in domain_lower: field = "cybersecurity"
+            elif "blockchain" in domain_lower: field = "blockchain"
+            elif "ml" in domain_lower or "ai" in domain_lower: field = "ai_ml"
+            elif "front" in domain_lower: field = "frontend"
+            elif "back" in domain_lower: field = "backend"
+            else: field = "devops"
+
+        # 3. Check Dynamic Cache First
+        if field in self.dynamic_intel:
+            logger.info(f">>> serving DYNAMIC market intel for {field}")
+            return self.dynamic_intel[field]
+            
+        # 4. Fallback to Static
+        return FIELD_MARKET_INTEL.get(field, FIELD_MARKET_INTEL['devops'])
+
+    def load_resume_audit(self, audit_path: str) -> bool:
+        """
+        Load candidate audit JSON from resume validator.
+        
+        Args:
+            audit_path: Path to candidate_full_audit.json
+            
+        Returns:
+            True if loaded successfully
+        """
+        try:
+            from app.resume.loader import load_candidate_audit, extract_candidate_context
+            
+            audit_data = load_candidate_audit(audit_path)
+            if not audit_data:
+                logger.error(f">>> Failed to load audit: {audit_path}")
+                return False
+            
+            self.candidate_context = extract_candidate_context(audit_data)
+            logger.info(f">>> [RESUME] Loaded candidate: {self.candidate_context.get('email', 'Unknown')}")
+            logger.info(f">>> [RESUME] Detected field: {self.candidate_context.get('field', 'Unknown')}")
+            logger.info(f">>> [RESUME] Verified skills: {self.candidate_context.get('verified_skills', [])}")
+            return True
+            
+        except Exception as e:
+            logger.error(f">>> [RESUME] Load error: {e}")
+            return False
+
+    def get_candidate_context(self) -> Optional[Dict[str, Any]]:
+        """
+        Get loaded candidate context.
+        
+        Returns:
+            Candidate context dict or None if not loaded
+        """
+        return self.candidate_context
+
+    def get_candidate_prompt_context(self) -> str:
+        """
+        Get formatted candidate context for agent prompts.
+        
+        Returns:
+            Formatted string for system prompt injection
+        """
+        if not self.candidate_context:
+            return ""
+        
+        try:
+            from app.resume.loader import format_context_for_prompt
+            return format_context_for_prompt(self.candidate_context)
+        except Exception as e:
+            logger.error(f">>> [PROMPT] Format error: {e}")
+            return ""
+
+    def clear_candidate(self):
+        """Clear loaded candidate context."""
+        self.candidate_context = None
+        logger.info(">>> [RESUME] Candidate context cleared.")
+
+
+# Singleton Instance Export
+knowledge_engine = AegisKnowledgeEngine()
 ```
 
 ---
