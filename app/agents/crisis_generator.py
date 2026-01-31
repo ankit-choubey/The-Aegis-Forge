@@ -102,10 +102,21 @@ async def generate_crisis_question(
         full_response = ""
         
         async for chunk in stream:
-            if chunk.choices:
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    full_response += delta
+            # Handle different chunk types safely (SDK version compatibility)
+            content = ""
+            if hasattr(chunk, 'choices') and chunk.choices:
+                # Old format: chunk.choices[0].delta.content
+                delta = chunk.choices[0].delta
+                content = getattr(delta, 'content', '') or ''
+            elif hasattr(chunk, 'content'):
+                # New format: chunk.content directly
+                content = chunk.content or ''
+            elif hasattr(chunk, 'delta') and hasattr(chunk.delta, 'content'):
+                # Alternative format: chunk.delta.content
+                content = chunk.delta.content or ''
+            
+            if content:
+                full_response += content
         
         question = full_response.strip()
         

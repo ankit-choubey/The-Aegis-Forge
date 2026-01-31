@@ -88,11 +88,21 @@ class IncidentLead(Agent, AegisAgentBase):
                     f"{FAANG_INTERVIEWER_GUIDE}"
                 )
                 
+                # [FIX] Smart Context: Remove massive 'raw_text' but keep structured data
+                safe_context = knowledge_engine.candidate_context.copy()
+                if 'raw_text' in safe_context:
+                    del safe_context['raw_text']
+                
+                # Convert to string and truncate safely to ~1500 chars (approx 400-500 tokens)
+                candidate_json_str = json.dumps(safe_context, default=str)
+                if len(candidate_json_str) > 1500:
+                    candidate_json_str = candidate_json_str[:1500] + "... (truncated)"
+                
                 # Inject scripts into context for the Prompt to use
                 enhanced_context = (
-                    f"{scenario.context}\n\n"
-                    f"{market_intel}\n\n"
-                    f"{candidate_context}\n\n"
+                    f"{scenario.context}\n"
+                    f"MARKET INTEL: {market_intel[:1000]}\n"
+                    f"CANDIDATE DATA: {candidate_json_str}\n\n"
                     f"[MANDATORY OPENING SCRIPT]\n"
                     f"1. RESUME ACK: '{resume_ack_script}'\n"
                     f"2. INTRO CHALLENGE: '{intro_script}'"

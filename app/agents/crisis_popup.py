@@ -81,8 +81,8 @@ class CrisisPopupAgent:
     async def _crisis_loop(self):
         """Trigger crisis popup: first at 3 min, second at 5 min after first."""
         try:
-            # FIRST CRISIS: Wait 3 minutes
-            first_delay = 180  # 3 minutes exactly
+            # FIRST CRISIS: Wait 1 minute (User Request)
+            first_delay = 60  # 1 minute exactly
             logger.info(f">>> Crisis #1 will trigger in {first_delay} seconds (3 minutes)")
             
             await asyncio.sleep(first_delay)
@@ -164,8 +164,18 @@ class CrisisPopupAgent:
                     f"INTERRUPT the current topic and urgently ask this: '{question}' "
                     f"Speak with urgency. This is a surprise test."
                 )
-                self._lead_agent.chat_ctx.add_message(role="system", content=pivot_prompt)
-                logger.info(">>> Injected crisis into lead agent context")
+                
+                # [FIX] Use .copy() and update_chat_ctx() for read-only context
+                if hasattr(self._lead_agent, 'update_chat_ctx'):
+                    # New SDK: copy context, modify, then update
+                    new_ctx = self._lead_agent.chat_ctx.copy()
+                    new_ctx.add_message(role="system", content=pivot_prompt)
+                    await self._lead_agent.update_chat_ctx(new_ctx)
+                    logger.info(">>> Injected crisis into lead agent context (via update_chat_ctx)")
+                else:
+                    # Fallback: try direct modification (old SDK)
+                    self._lead_agent.chat_ctx.add_message(role="system", content=pivot_prompt)
+                    logger.info(">>> Injected crisis into lead agent context (direct)")
                 
                 # [FIX] Force immediate speech if session controls available
                 if self._session and hasattr(self._session, 'say'):

@@ -56,6 +56,10 @@ class InterviewStartRequest(BaseModel):
     candidate_id: str
     room_name: Optional[str] = None
 
+class FocusTopicsRequest(BaseModel):
+    candidate_id: str
+    focus_topics: List[str]
+
 # IN-MEMORY SESSION STORE
 active_sessions = {}
 candidate_audits = {}  # Store audits by candidate_id
@@ -208,6 +212,55 @@ async def start_interview_session(request: InterviewStartRequest):
         "scenario": candidate_data['scenario_id'],
         "livekit_url": dispatcher.url
     }
+
+
+@app.post("/api/set-focus-topics")
+async def set_focus_topics(request: FocusTopicsRequest):
+    """
+    Set recruiter-selected focus topics for the interview.
+    Call this BEFORE /start-interview to prioritize specific skills.
+    
+    Args:
+        candidate_id: ID from upload-resume response
+        focus_topics: List of skills to focus on (max 5 recommended)
+        
+    Returns:
+        - status: success/error
+        - topics: The saved topics
+    """
+    import json
+    
+    # Validate candidate exists (optional - can skip if coming from different flow)
+    if request.candidate_id and request.candidate_id in candidate_audits:
+        logger.info(f">>> [FOCUS] Setting topics for known candidate: {request.candidate_id}")
+    
+    # Limit to 5 topics for best results
+    topics = request.focus_topics[:5] if len(request.focus_topics) > 5 else request.focus_topics
+    
+    # Save to focus_config.json (Knowledge Engine reads from here)
+    config = {
+        "candidate_id": request.candidate_id,
+        "focus_topics": topics
+    }
+    
+    try:
+        config_path = UPLOADS_DIR / "focus_config.json"
+        with open(config_path, "w") as f:
+            json.dump(config, f, indent=2)
+        
+        logger.info(f">>> [FOCUS] Saved focus topics: {topics}")
+        
+        # Also trigger Knowledge Engine to reload
+        knowledge_engine.load_focus_topics()
+        
+        return {
+            "status": "success",
+            "message": f"Focus topics saved for candidate {request.candidate_id}",
+            "topics": topics
+        }
+    except Exception as e:
+        logger.error(f">>> [FOCUS] Failed to save focus topics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save focus topics: {e}")
 
 
 # ...

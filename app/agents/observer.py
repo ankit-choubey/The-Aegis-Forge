@@ -59,6 +59,7 @@ class ObserverAgent(AegisAgentBase):
         chat_ctx.add_message(role="user", content=f"Evaluate this turn: '{turn_text}'")
         
         try:
+             # Streaming call to LLM
              stream = self.model.chat(chat_ctx=chat_ctx)
              full_response = ""
              async for chunk in stream:
@@ -73,31 +74,35 @@ class ObserverAgent(AegisAgentBase):
                  if content:
                      full_response += content
              
-             with open("debug.log", "a") as f:
-                 f.write(f"LLM RESPONSE: {full_response}\n")
-             
              # Post-process the JSON
              clean_content = full_response.strip()
-             # Try to extract JSON if wrapped in markdown
+             
+             # Basic Markdown cleanup
              if "```json" in clean_content:
                  clean_content = clean_content.split("```json")[1].split("```")[0].strip()
+             elif "```" in clean_content:
+                 clean_content = clean_content.split("```")[1].strip()
                  
-             logger.info(f"Observer JSON: {clean_content}")
+             logger.info(f"Observer Evaluated: {clean_content[:50]}...")
              
-             # Store for final calculation
-             self.evaluations.append(clean_content)
-             print(f"DEBUG: Stored evaluation. Total count: {len(self.evaluations)}") # <--- Added Debug
-             
-             # Log to Audit Trail
-             try:
-                 eval_data = json.loads(clean_content)
-                 self.audit_logger.log_event("ObserverAgent", "EVALUATION_COMPLETE", "Turn evaluated", metadata=eval_data)
-             except:
-                 self.audit_logger.log_event("ObserverAgent", "EVALUATION_PARSE_ERROR", "Could not parse JSON", metadata={"raw": clean_content})
-                 print(f"DEBUG: JSON Parse Error for: {clean_content}") # <--- Added Debug
+             # Verify it's at least vaguely JSON-like
+             if "{" in clean_content and "}" in clean_content:
+                 self.evaluations.append(clean_content)
+                 print(f"DEBUG: Stored evaluation. Total count: {len(self.evaluations)}") 
                  
+                 # Log to Audit Trail (Try parsing for cleaner logs, but don't fail)
+                 try:
+                     eval_data = json.loads(clean_content)
+                     self.audit_logger.log_event("ObserverAgent", "EVALUATION_COMPLETE", "Turn evaluated", metadata=eval_data)
+                 except:
+                     self.audit_logger.log_event("ObserverAgent", "EVALUATION_RAW", "Raw evaluation logged", metadata={"raw": clean_content})
+             else:
+                 logger.warning(f"Observer generated non-JSON output: {clean_content}")
+                 self.audit_logger.log_event("ObserverAgent", "EVALUATION_FAILED", "Output was not JSON", metadata={"output": clean_content})
+
         except Exception as e:
-            logger.error(f"Observer evaluation error: {e}")
+            logger.error(f"Observer evaluation COMPLETED WITH ERROR: {e}")
+            self.audit_logger.log_event("ObserverAgent", "EVALUATION_ERROR", f"LLM Failure: {str(e)}")
             print(f"DEBUG: Observer Exception: {e}") # <--- Added Debug
             
     

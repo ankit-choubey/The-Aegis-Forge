@@ -175,8 +175,8 @@ async def my_agent(ctx: JobContext):
         
         vad=ctx.proc.userdata["vad"],
         
-        # [TUNING] Reduce sensitivity to short noises
-        min_endpointing_delay=0.5,
+        # [TUNING] Increased for noisy hackathon environment
+        min_endpointing_delay=0.8,  # Wait longer before considering speech ended
     )
 
     # 1. Incident Lead (Hiring Manager)
@@ -232,8 +232,8 @@ async def my_agent(ctx: JobContext):
         audit_logger=audit_logger,
         lead_agent=lead_agent_logic,
         session=session,        # [FIX] Pass session for immediate speech
-        min_delay_seconds=60,   # 1 minute (User Request)
-        max_delay_seconds=120   # 2 minutes max
+        min_delay_seconds=90,   # 1 minute (User Request)
+        max_delay_seconds=150   # 2 minutes max
     )
     if candidate_name:
         crisis_popup_agent.set_candidate_name(candidate_name)
