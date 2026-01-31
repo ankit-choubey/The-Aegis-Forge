@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     Mic, MicOff, Video, VideoOff, PhoneOff,
     Settings, Shield, Wifi, Terminal as TerminalIcon, Play, Square, Radio,
@@ -692,7 +692,7 @@ const EmptyPanel = () => {
 // ============================================
 // CONTENT WRAPPER (Inside Room)
 // ============================================
-const RoomContent = ({ onEndCall }: { onEndCall: () => void }) => {
+const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: () => void; candidateId: string; onInterviewEnd: () => void }) => {
     const [messages, setMessages] = useState<Message[]>([
         { id: "1", timestamp: new Date().toLocaleTimeString(), sender: "SYSTEM", text: "Neural link established. Waiting for AI interviewer..." }
     ]);
@@ -722,6 +722,21 @@ const RoomContent = ({ onEndCall }: { onEndCall: () => void }) => {
                         sender: data.sender || "SYSTEM",
                         text: data.text
                     }]);
+                }
+
+                // Listen for INTERVIEW_END signal from backend
+                if (data.type === "INTERVIEW_END") {
+                    console.log("[AEGIS] Interview ended signal received:", data.reason);
+                    setMessages(prev => [...prev, {
+                        id: Date.now().toString(),
+                        timestamp: getTimestamp(),
+                        sender: "SYSTEM",
+                        text: `📋 Interview completed: ${data.reason || "Session ended"}. FSIR Report is being generated...`
+                    }]);
+                    // Delay to allow backend to generate report
+                    setTimeout(() => {
+                        onInterviewEnd();
+                    }, 2000);
                 }
             } catch (e) {
                 console.warn("Packet Decode Failed:", e);
@@ -843,9 +858,56 @@ const RoomContent = ({ onEndCall }: { onEndCall: () => void }) => {
 // ============================================
 export default function InterviewRoomPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [token, setToken] = useState("");
     const [isSessionEnded, setIsSessionEnded] = useState(false);
     const [isRecruiterMode, setIsRecruiterMode] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    // Get candidate ID from URL params (passed from dashboard after starting interview)
+    const candidateId = searchParams.get('candidate') || 'unknown';
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+
+    // Function to download FSIR report from Utkarsh's backend
+    const handleDownloadReport = async () => {
+        setIsDownloading(true);
+        console.log("[AEGIS] Downloading FSIR report for candidate:", candidateId);
+
+        try {
+            const response = await fetch(`${API_BASE}/download-report/${candidateId}`, {
+                headers: {
+                    "ngrok-skip-browser-warning": "true"
+                }
+            });
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    alert('Report not found. The interview may still be processing. Please try again in a few seconds.');
+                    setIsDownloading(false);
+                    return;
+                }
+                throw new Error(`Failed to download report: ${response.status}`);
+            }
+
+            // Get the blob and trigger download
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Aegis_Report_${candidateId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            console.log("[AEGIS] FSIR report downloaded successfully");
+        } catch (error) {
+            console.error("[AEGIS] Download failed:", error);
+            alert('Failed to download report. Please try again.');
+        } finally {
+            setIsDownloading(false);
+        }
+    };
 
     // Mock transcript data (will come from Utkarsh's backend)
     const mockTranscript: TranscriptEntry[] = [
@@ -981,11 +1043,21 @@ export default function InterviewRoomPage() {
                             {/* View Full Report Button */}
                             <div className="mt-6">
                                 <button
-                                    onClick={() => router.push('/report/demo')}
-                                    className="w-full px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-mono font-bold tracking-wider hover:from-amber-400 hover:to-amber-500 transition-all rounded-lg shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center gap-3"
+                                    onClick={handleDownloadReport}
+                                    disabled={isDownloading}
+                                    className="w-full px-8 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-mono font-bold tracking-wider hover:from-amber-400 hover:to-amber-500 transition-all rounded-lg shadow-[0_0_20px_rgba(245,158,11,0.3)] flex items-center justify-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Download className="w-5 h-5" />
-                                    VIEW FULL FSIR REPORT
+                                    {isDownloading ? (
+                                        <>
+                                            <Loader2 className="w-5 h-5 animate-spin" />
+                                            DOWNLOADING...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Download className="w-5 h-5" />
+                                            DOWNLOAD FSIR REPORT
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </div>
@@ -1000,11 +1072,21 @@ export default function InterviewRoomPage() {
                             </div>
 
                             <button
-                                onClick={() => router.push('/report/demo')}
-                                className="px-8 py-3 bg-[#00E5FF] text-black font-mono font-bold tracking-wider hover:bg-[#00E5FF]/80 transition-all rounded shadow-[0_0_20px_rgba(0,229,255,0.3)] flex items-center gap-2 mx-auto mb-6"
+                                onClick={handleDownloadReport}
+                                disabled={isDownloading}
+                                className="px-8 py-3 bg-[#00E5FF] text-black font-mono font-bold tracking-wider hover:bg-[#00E5FF]/80 transition-all rounded shadow-[0_0_20px_rgba(0,229,255,0.3)] flex items-center gap-2 mx-auto mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                <Download className="w-5 h-5" />
-                                VIEW FSIR REPORT
+                                {isDownloading ? (
+                                    <>
+                                        <Loader2 className="w-5 h-5 animate-spin" />
+                                        DOWNLOADING...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Download className="w-5 h-5" />
+                                        DOWNLOAD FSIR REPORT
+                                    </>
+                                )}
                             </button>
 
                             <button
@@ -1047,7 +1129,11 @@ export default function InterviewRoomPage() {
             data-lk-theme="default"
             className="h-full w-full"
         >
-            <RoomContent onEndCall={() => setIsSessionEnded(true)} />
+            <RoomContent
+                onEndCall={() => setIsSessionEnded(true)}
+                candidateId={candidateId}
+                onInterviewEnd={() => setIsSessionEnded(true)}
+            />
         </LiveKitRoom>
     );
 }

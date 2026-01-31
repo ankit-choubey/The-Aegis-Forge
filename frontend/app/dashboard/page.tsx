@@ -11,11 +11,12 @@ import {
 import clsx from "clsx";
 
 // ============================================
-// TYPES (Matching Utkarsh's Actual JSON Format)
+// TYPES (Matching Utkarsh's NEW JSON Format)
 // ============================================
 type ScanStatus = "IDLE" | "SCANNING" | "COMPLETE";
 
-interface BackendResponse {
+// The audit data structure (previously was top-level, now nested)
+interface AuditData {
     summary: {
         trust_score: string;
         integrity_level: string;
@@ -52,6 +53,16 @@ interface BackendResponse {
         unverified_skills: string[];
     };
     dynamic_market_intel: string;
+}
+
+// New top-level response structure
+interface BackendResponse {
+    candidate_id: string;
+    detected_field: string;
+    scenario: string;
+    trust_score: string;
+    verified_skills: string[];
+    audit: AuditData;
 }
 
 interface CandidateProfile {
@@ -277,7 +288,7 @@ const NeuralScanTerminal = ({ logs }: { logs: ScanLog[] }) => {
 
 // ============================================
 // STATE 3: SKILL SELECTION & FOCUS TOPICS
-// Now shows Utkarsh's rich backend data
+// Premium Modern Design with Glassmorphism
 // ============================================
 const SkillSelectionResult = ({
     profile,
@@ -291,267 +302,338 @@ const SkillSelectionResult = ({
     onToggleFocus: (skill: string) => void;
 }) => {
     const data = profile.backendData;
+    const audit = data?.audit;
 
-    // Determine trust score color
-    const getTrustScoreColor = (score: string) => {
+    // Determine trust score color and gradient
+    const getTrustScoreStyle = (score: string) => {
         const numScore = parseInt(score);
-        if (numScore >= 70) return "text-green-400 border-green-500/30 bg-green-500/10";
-        if (numScore >= 40) return "text-amber-400 border-amber-500/30 bg-amber-500/10";
-        return "text-red-400 border-red-500/30 bg-red-500/10";
+        if (numScore >= 70) return {
+            text: "text-emerald-400",
+            bg: "from-emerald-500/20 to-emerald-600/10",
+            border: "border-emerald-500/40",
+            glow: "shadow-[0_0_30px_rgba(16,185,129,0.2)]"
+        };
+        if (numScore >= 40) return {
+            text: "text-amber-400",
+            bg: "from-amber-500/20 to-amber-600/10",
+            border: "border-amber-500/40",
+            glow: "shadow-[0_0_30px_rgba(245,158,11,0.2)]"
+        };
+        return {
+            text: "text-red-400",
+            bg: "from-red-500/20 to-red-600/10",
+            border: "border-red-500/40",
+            glow: "shadow-[0_0_30px_rgba(239,68,68,0.2)]"
+        };
     };
+
+    const trustStyle = getTrustScoreStyle(audit?.summary?.trust_score || "0%");
 
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.5 }}
             className="w-full space-y-6"
         >
-            {/* Success Header */}
-            <div className="flex items-center justify-center gap-3 text-green-400 font-mono">
-                <CheckCircle className="w-5 h-5" />
-                <span className="text-sm tracking-[0.2em]">RESUME_PARSED_SUCCESSFULLY</span>
-            </div>
+            {/* Success Header with Animation */}
+            <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.2 }}
+                className="flex items-center justify-center gap-3 py-4"
+            >
+                <div className="relative">
+                    <div className="absolute inset-0 bg-emerald-500/30 rounded-full blur-xl animate-pulse" />
+                    <CheckCircle className="w-6 h-6 text-emerald-400 relative z-10" />
+                </div>
+                <span className="text-emerald-400 font-mono text-sm tracking-[0.3em] font-semibold">
+                    RESUME_ANALYSIS_COMPLETE
+                </span>
+            </motion.div>
 
-            {/* Trust Score & Summary Banner */}
-            {data?.summary && (
+            {/* Trust Score Hero Card */}
+            {audit?.summary && (
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="grid grid-cols-3 gap-4"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="relative overflow-hidden rounded-2xl"
                 >
-                    <div className={clsx("p-4 rounded-lg border text-center", getTrustScoreColor(data.summary.trust_score || "0%"))}>
-                        <p className="font-mono text-xs opacity-70 mb-1">TRUST_SCORE</p>
-                        <p className="font-mono text-2xl font-bold">{data.summary.trust_score || "N/A"}</p>
-                    </div>
-                    <div className="p-4 rounded-lg border border-white/10 bg-white/5 text-center">
-                        <p className="font-mono text-xs text-zinc-500 mb-1">INTEGRITY_LEVEL</p>
-                        <p className={clsx(
-                            "font-mono text-lg font-bold",
-                            data.summary.integrity_level === "High" ? "text-green-400" :
-                                data.summary.integrity_level === "Medium" ? "text-amber-400" : "text-red-400"
-                        )}>{data.summary.integrity_level || "Unknown"}</p>
-                    </div>
-                    <div className="p-4 rounded-lg border border-green-500/20 bg-green-500/5 text-center">
-                        <p className="font-mono text-xs text-zinc-500 mb-1">VALIDATION</p>
-                        <p className="font-mono text-lg font-bold text-green-400">{data.summary.validation_status || "Pending"}</p>
+                    {/* Animated Background Gradient */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#0a0a0f] via-[#0f0f15] to-[#0a0a0f]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(0,229,255,0.1),transparent_50%)]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(139,92,246,0.08),transparent_50%)]" />
+
+                    <div className="relative z-10 p-8 border border-white/10 rounded-2xl backdrop-blur-sm">
+                        <div className="grid grid-cols-3 gap-6">
+                            {/* Trust Score - Featured */}
+                            <div className={clsx(
+                                "relative p-6 rounded-xl border bg-gradient-to-br overflow-hidden",
+                                trustStyle.bg, trustStyle.border, trustStyle.glow
+                            )}>
+                                <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-white/5 to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
+                                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-3">Trust Score</p>
+                                <p className={clsx("font-mono text-4xl font-black tracking-tight", trustStyle.text)}>
+                                    {audit.summary.trust_score || "N/A"}
+                                </p>
+                            </div>
+
+                            {/* Integrity Level */}
+                            <div className="relative p-6 rounded-xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-cyan-500/10 to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
+                                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-3">Integrity</p>
+                                <p className={clsx(
+                                    "font-mono text-2xl font-bold",
+                                    audit.summary.integrity_level === "High" ? "text-emerald-400" :
+                                        audit.summary.integrity_level === "Medium" ? "text-amber-400" : "text-red-400"
+                                )}>
+                                    {audit.summary.integrity_level || "Unknown"}
+                                </p>
+                            </div>
+
+                            {/* Validation Status */}
+                            <div className="relative p-6 rounded-xl border border-white/10 bg-gradient-to-br from-white/5 to-transparent">
+                                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-emerald-500/10 to-transparent rounded-full -translate-y-1/2 translate-x-1/2" />
+                                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-3">Status</p>
+                                <p className="font-mono text-2xl font-bold text-emerald-400">
+                                    {audit.summary.validation_status || "Pending"}
+                                </p>
+                            </div>
+                        </div>
                     </div>
                 </motion.div>
             )}
 
-            {/* Profile Card */}
-            <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                {/* Candidate Info */}
-                <div className="p-6 border-b border-white/10">
-                    <div className="flex items-center gap-4">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#00E5FF]/20 to-cyan-900/30 border border-[#00E5FF]/30 flex items-center justify-center">
-                            <User className="w-7 h-7 text-[#00E5FF]" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-white font-mono text-lg font-bold tracking-wider">
-                                {data?.contact_details?.name || profile.candidate_id}
-                            </h3>
-                            {data?.contact_details && (
-                                <div className="flex items-center gap-4 mt-1">
-                                    <span className="text-zinc-500 font-mono text-xs flex items-center gap-1">
-                                        <Mail className="w-3 h-3" /> {data.contact_details.email}
-                                    </span>
-                                    <span className="text-zinc-500 font-mono text-xs flex items-center gap-1">
-                                        <Phone className="w-3 h-3" /> {data.contact_details.phone}
-                                    </span>
-                                </div>
-                            )}
-                            {!data && uploadedFile && (
-                                <p className="text-zinc-500 font-mono text-xs flex items-center gap-2">
-                                    <FileText className="w-3 h-3" />
-                                    {uploadedFile.name}
-                                </p>
-                            )}
-                        </div>
-                        <div className={clsx(
-                            "flex items-center gap-2 px-3 py-1.5 border rounded-full",
-                            profile.integrity_check
-                                ? "bg-green-500/10 border-green-500/30"
-                                : "bg-red-500/10 border-red-500/30"
-                        )}>
-                            <Shield className={clsx("w-3 h-3", profile.integrity_check ? "text-green-400" : "text-red-400")} />
-                            <span className={clsx("font-mono text-xs", profile.integrity_check ? "text-green-400" : "text-red-400")}>
-                                INTEGRITY: {profile.integrity_check ? "ON" : "OFF"}
-                            </span>
-                        </div>
-                    </div>
-                </div>
+            {/* Main Content Card - Glassmorphism */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="relative rounded-2xl overflow-hidden"
+            >
+                <div className="absolute inset-0 bg-gradient-to-br from-white/[0.08] to-white/[0.02]" />
+                <div className="absolute inset-0 backdrop-blur-xl" />
 
-                {/* External Links Status */}
-                {data?.external_links_status && (
-                    <div className="p-6 border-b border-white/10 bg-black/20">
-                        <div className="flex items-center gap-2 mb-3">
-                            <ExternalLink className="w-4 h-4 text-cyan-400" />
-                            <span className="text-white font-mono text-sm font-bold tracking-wider">EXTERNAL_LINKS</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="flex items-center gap-3">
-                                <Linkedin className="w-5 h-5 text-blue-400" />
-                                <div className="flex-1">
-                                    <p className="text-zinc-400 font-mono text-xs truncate">
-                                        {data.external_links_status.linkedin.url || "Not provided"}
-                                    </p>
+                <div className="relative z-10 border border-white/10 rounded-2xl overflow-hidden">
+                    {/* Candidate Header */}
+                    <div className="p-6 bg-gradient-to-r from-[#00E5FF]/5 via-transparent to-purple-500/5 border-b border-white/5">
+                        <div className="flex items-center gap-5">
+                            <div className="relative">
+                                <div className="absolute inset-0 bg-gradient-to-br from-[#00E5FF] to-purple-500 rounded-full blur-lg opacity-30" />
+                                <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-[#00E5FF]/20 to-purple-500/20 border-2 border-[#00E5FF]/40 flex items-center justify-center">
+                                    <User className="w-8 h-8 text-[#00E5FF]" />
                                 </div>
-                                {data.external_links_status.linkedin.status?.includes("Unreachable") ? (
-                                    <span className="flex items-center gap-1 text-amber-400 text-xs">
-                                        <AlertTriangle className="w-3 h-3" /> Unreachable
-                                    </span>
-                                ) : (
-                                    <span className="flex items-center gap-1 text-green-400 text-xs">
-                                        <CheckCircle className="w-3 h-3" /> Valid
-                                    </span>
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-white text-xl font-semibold tracking-wide mb-1">
+                                    {audit?.contact_details?.name || profile.candidate_id}
+                                </h3>
+                                {audit?.contact_details && (
+                                    <div className="flex items-center gap-5">
+                                        <span className="text-zinc-400 text-sm flex items-center gap-2">
+                                            <Mail className="w-4 h-4 text-[#00E5FF]/60" />
+                                            {audit.contact_details.email}
+                                        </span>
+                                        <span className="text-zinc-400 text-sm flex items-center gap-2">
+                                            <Phone className="w-4 h-4 text-[#00E5FF]/60" />
+                                            {audit.contact_details.phone}
+                                        </span>
+                                    </div>
                                 )}
                             </div>
-                            <div className="flex items-center gap-3">
-                                <Github className="w-5 h-5 text-white" />
-                                <div className="flex-1">
-                                    <p className="text-zinc-400 font-mono text-xs">
-                                        {data.external_links_status.github.url || "Not provided"}
-                                    </p>
-                                </div>
-                                {data.external_links_status.github.valid ? (
-                                    <span className="flex items-center gap-1 text-green-400 text-xs">
-                                        <CheckCircle className="w-3 h-3" /> Valid
-                                    </span>
-                                ) : (
-                                    <span className="flex items-center gap-1 text-red-400 text-xs">
-                                        <XCircle className="w-3 h-3" /> Invalid
-                                    </span>
-                                )}
+                            <div className={clsx(
+                                "flex items-center gap-2 px-4 py-2 rounded-full border",
+                                profile.integrity_check
+                                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                                    : "bg-red-500/10 border-red-500/30 text-red-400"
+                            )}>
+                                <Shield className="w-4 h-4" />
+                                <span className="font-mono text-xs font-semibold tracking-wider">
+                                    {profile.integrity_check ? "VERIFIED" : "UNVERIFIED"}
+                                </span>
                             </div>
                         </div>
                     </div>
-                )}
 
-                {/* Verification Breakdown */}
-                {data?.verification_breakdown && (
-                    <div className="p-6 border-b border-white/10">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Shield className="w-4 h-4 text-cyan-400" />
-                            <span className="text-white font-mono text-sm font-bold tracking-wider">
-                                SKILL_VERIFICATION
-                            </span>
+                    {/* External Links - Compact Design */}
+                    {audit?.external_links_status && (
+                        <div className="px-6 py-4 border-b border-white/5 bg-black/20">
+                            <div className="flex items-center gap-6">
+                                <span className="text-zinc-500 font-mono text-xs uppercase tracking-wider">Links:</span>
+                                <div className="flex items-center gap-2">
+                                    <Linkedin className="w-4 h-4 text-blue-400" />
+                                    <span className="text-zinc-400 text-sm max-w-[200px] truncate">
+                                        {audit.external_links_status.linkedin.url || "Not provided"}
+                                    </span>
+                                    {audit.external_links_status.linkedin.status?.includes("Broken") || audit.external_links_status.linkedin.status?.includes("Unreachable") ? (
+                                        <span className="text-amber-400 text-xs px-2 py-0.5 bg-amber-500/10 rounded-full">Unreachable</span>
+                                    ) : audit.external_links_status.linkedin.url ? (
+                                        <span className="text-emerald-400 text-xs px-2 py-0.5 bg-emerald-500/10 rounded-full">Valid</span>
+                                    ) : null}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <Github className="w-4 h-4 text-white" />
+                                    <span className="text-zinc-400 text-sm">
+                                        {audit.external_links_status.github.url || "Not provided"}
+                                    </span>
+                                    {audit.external_links_status.github.valid ? (
+                                        <span className="text-emerald-400 text-xs px-2 py-0.5 bg-emerald-500/10 rounded-full">Valid</span>
+                                    ) : audit.external_links_status.github.url ? (
+                                        <span className="text-red-400 text-xs px-2 py-0.5 bg-red-500/10 rounded-full">Invalid</span>
+                                    ) : null}
+                                </div>
+                            </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <p className="text-green-400 font-mono text-xs mb-2 flex items-center gap-1">
-                                    <CheckCircle className="w-3 h-3" /> VERIFIED ({data.verification_breakdown.verified_skills.length})
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    {data.verification_breakdown.verified_skills.length > 0 ? (
-                                        data.verification_breakdown.verified_skills.map(skill => (
-                                            <span key={skill} className="px-2 py-1 bg-green-500/20 text-green-400 border border-green-500/30 text-xs font-mono rounded">
+                    )}
+
+                    {/* Skills Verification - Modern Cards */}
+                    {audit?.verification_breakdown && (
+                        <div className="p-6 border-b border-white/5">
+                            <div className="flex items-center gap-3 mb-5">
+                                <div className="p-2 rounded-lg bg-gradient-to-br from-[#00E5FF]/20 to-[#00E5FF]/5">
+                                    <Shield className="w-4 h-4 text-[#00E5FF]" />
+                                </div>
+                                <span className="text-white font-semibold tracking-wide">Skill Verification</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                {/* Verified Skills */}
+                                <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                        <span className="text-emerald-400 font-mono text-xs font-semibold">
+                                            VERIFIED ({audit.verification_breakdown.verified_skills.length})
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {audit.verification_breakdown.verified_skills.length > 0 ? (
+                                            audit.verification_breakdown.verified_skills.map((skill: string) => (
+                                                <span key={skill} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium rounded-lg">
+                                                    {skill}
+                                                </span>
+                                            ))
+                                        ) : (
+                                            <span className="text-zinc-500 text-sm italic">No skills verified yet</span>
+                                        )}
+                                    </div>
+                                </div>
+                                {/* Unverified Skills */}
+                                <div className="p-4 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/20">
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                                        <span className="text-amber-400 font-mono text-xs font-semibold">
+                                            PENDING ({audit.verification_breakdown.unverified_skills.length})
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {audit.verification_breakdown.unverified_skills.map((skill: string) => (
+                                            <span key={skill} className="px-3 py-1.5 bg-amber-500/15 text-amber-300 border border-amber-500/25 text-xs font-medium rounded-lg">
                                                 {skill}
                                             </span>
-                                        ))
-                                    ) : (
-                                        <span className="text-zinc-600 text-xs">None verified</span>
-                                    )}
-                                </div>
-                            </div>
-                            <div>
-                                <p className="text-amber-400 font-mono text-xs mb-2 flex items-center gap-1">
-                                    <AlertTriangle className="w-3 h-3" /> UNVERIFIED ({data.verification_breakdown.unverified_skills.length})
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    {data.verification_breakdown.unverified_skills.map(skill => (
-                                        <span key={skill} className="px-2 py-1 bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-mono rounded">
-                                            {skill}
-                                        </span>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                {/* All Skills (for selection) */}
-                <div className="p-6 border-b border-white/10">
-                    <div className="flex items-center gap-2 mb-4">
-                        <Database className="w-4 h-4 text-[#00E5FF]" />
-                        <span className="text-white font-mono text-sm font-bold tracking-wider">
-                            SELECT_FOCUS_TOPICS
-                        </span>
-                        <span className="text-zinc-600 font-mono text-xs ml-auto">
-                            Click skills to prioritize in interview
-                        </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                        {profile.skills.map((skill, index) => (
-                            <SelectableSkillTag
-                                key={skill}
-                                skill={skill}
-                                index={index}
-                                isSelected={profile.focus_topics.includes(skill)}
-                                onToggle={() => onToggleFocus(skill)}
-                            />
-                        ))}
-                    </div>
-                </div>
-
-                {/* Focus Topics Summary */}
-                <div className="p-6 bg-amber-500/5">
-                    <div className="flex items-center gap-2 mb-3">
-                        <Target className="w-4 h-4 text-amber-400" />
-                        <span className="text-amber-400 font-mono text-sm font-bold tracking-wider">
-                            FOCUS_TOPICS
-                        </span>
-                        <span className="text-zinc-600 font-mono text-xs">
-                            ({profile.focus_topics.length} selected)
-                        </span>
-                    </div>
-
-                    {profile.focus_topics.length > 0 ? (
+                    {/* Focus Topics Selection */}
+                    <div className="p-6 border-b border-white/5 bg-gradient-to-r from-cyan-500/5 to-transparent">
+                        <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-lg bg-gradient-to-br from-[#00E5FF]/20 to-[#00E5FF]/5">
+                                    <Target className="w-4 h-4 text-[#00E5FF]" />
+                                </div>
+                                <span className="text-white font-semibold tracking-wide">Select Focus Areas</span>
+                            </div>
+                            <span className="text-zinc-500 text-xs">Click to prioritize topics for the interview</span>
+                        </div>
                         <div className="flex flex-wrap gap-2">
-                            {profile.focus_topics.map((topic) => (
-                                <span
-                                    key={topic}
-                                    className="px-3 py-1.5 bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-mono rounded-full"
-                                >
-                                    {topic}
-                                </span>
+                            {profile.skills.map((skill, index) => (
+                                <SelectableSkillTag
+                                    key={skill}
+                                    skill={skill}
+                                    index={index}
+                                    isSelected={profile.focus_topics.includes(skill)}
+                                    onToggle={() => onToggleFocus(skill)}
+                                />
                             ))}
                         </div>
-                    ) : (
-                        <p className="text-zinc-500 font-mono text-xs">
-                            No focus topics selected. AI will evaluate all skills equally.
-                        </p>
-                    )}
-                </div>
-            </div>
-
-            {/* Market Intel */}
-            {data?.dynamic_market_intel && (
-                <div className="p-4 bg-purple-500/5 border border-purple-500/20 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                        <Cpu className="w-4 h-4 text-purple-400" />
-                        <span className="text-purple-400 font-mono text-xs font-bold">AI_MARKET_INTEL</span>
                     </div>
-                    <p className="text-zinc-400 text-xs leading-relaxed whitespace-pre-wrap">
-                        {data.dynamic_market_intel.substring(0, 300)}...
-                    </p>
+
+                    {/* Selected Focus Topics */}
+                    <div className="p-6 bg-gradient-to-r from-amber-500/5 via-orange-500/5 to-transparent">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-600/10">
+                                <Zap className="w-4 h-4 text-amber-400" />
+                            </div>
+                            <span className="text-amber-400 font-semibold tracking-wide">Focus Topics</span>
+                            <span className="text-zinc-500 text-xs ml-auto">
+                                {profile.focus_topics.length} selected
+                            </span>
+                        </div>
+                        {profile.focus_topics.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                                {profile.focus_topics.map((topic) => (
+                                    <motion.span
+                                        key={topic}
+                                        initial={{ scale: 0.8, opacity: 0 }}
+                                        animate={{ scale: 1, opacity: 1 }}
+                                        className="px-4 py-2 bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30 text-sm font-medium rounded-full shadow-[0_0_15px_rgba(245,158,11,0.15)]"
+                                    >
+                                        {topic}
+                                    </motion.span>
+                                ))}
+                            </div>
+                        ) : (
+                            <p className="text-zinc-500 text-sm">
+                                No focus topics selected — AI will evaluate all skills equally.
+                            </p>
+                        )}
+                    </div>
                 </div>
+            </motion.div>
+
+            {/* AI Market Intel - Collapsible Premium Card */}
+            {audit?.dynamic_market_intel && (
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.5 }}
+                    className="relative rounded-2xl overflow-hidden"
+                >
+                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-violet-500/5 to-transparent" />
+                    <div className="relative z-10 p-6 border border-purple-500/20 rounded-2xl">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-violet-600/10">
+                                <Cpu className="w-4 h-4 text-purple-400" />
+                            </div>
+                            <span className="text-purple-400 font-semibold tracking-wide">AI Market Intelligence</span>
+                        </div>
+                        <p className="text-zinc-400 text-sm leading-relaxed">
+                            {audit.dynamic_market_intel.substring(0, 400)}...
+                        </p>
+                    </div>
+                </motion.div>
             )}
 
-            {/* Deploy Button */}
+            {/* Deploy Button - Premium CTA */}
             <motion.button
                 onClick={onDeploy}
-                whileHover={{ scale: 1.02 }}
+                whileHover={{ scale: 1.02, y: -2 }}
                 whileTap={{ scale: 0.98 }}
-                className="w-full relative group px-8 py-5 bg-cyan-600 hover:bg-cyan-500 text-black font-bold font-mono text-lg tracking-[0.15em] rounded-lg transition-all overflow-hidden shadow-[0_0_30px_rgba(0,229,255,0.3)] hover:shadow-[0_0_50px_rgba(0,229,255,0.5)]"
+                className="w-full relative group overflow-hidden rounded-xl"
             >
-                <span className="absolute inset-0 bg-white/20 animate-pulse opacity-0 group-hover:opacity-100 transition-opacity" />
-                <span className="relative flex items-center justify-center gap-3">
-                    <Rocket className="w-6 h-6" />
-                    [ DEPLOY_INTERVIEW_AGENT :: START ]
-                    <Zap className="w-5 h-5" />
-                </span>
+                <div className="absolute inset-0 bg-gradient-to-r from-[#00E5FF] via-cyan-400 to-[#00E5FF] bg-[length:200%_100%] animate-[shimmer_3s_ease-in-out_infinite]" />
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                <div className="relative z-10 px-8 py-5 flex items-center justify-center gap-4">
+                    <Rocket className="w-6 h-6 text-black" />
+                    <span className="text-black font-bold text-lg tracking-[0.15em]">
+                        START INTERVIEW
+                    </span>
+                    <Zap className="w-5 h-5 text-black" />
+                </div>
             </motion.button>
         </motion.div>
     );
@@ -622,19 +704,42 @@ export default function DashboardPage() {
             });
 
             if (response.ok) {
-                const data: BackendResponse = await response.json();
+                // Get raw text first to debug
+                const rawText = await response.text();
+                console.log("[AEGIS] Raw response:", rawText.substring(0, 500));
+
+                let data: BackendResponse;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (parseError) {
+                    console.error("[AEGIS] JSON Parse Error:", parseError);
+                    console.error("[AEGIS] Raw response that failed to parse:", rawText);
+                    throw new Error("Failed to parse backend response as JSON");
+                }
+
                 console.log("[AEGIS] Resume parsed successfully:", data);
+                console.log("[AEGIS] Skills received:", data.audit?.resume_claims?.skills_list);
+                console.log("[AEGIS] Full resume_claims:", data.audit?.resume_claims);
+
+                // Extract skills from the nested audit object
+                const skillsList = data.audit?.resume_claims?.skills_list;
+                const extractedSkills = Array.isArray(skillsList) && skillsList.length > 0
+                    ? skillsList
+                    : ["React", "Python", "TypeScript"]; // Only fallback if truly empty
+
+                console.log("[AEGIS] Extracted skills to use:", extractedSkills);
 
                 // Map Utkarsh's backend response to our format
                 setProfile({
-                    candidate_id: data.contact_details?.name || candidateName || "Candidate",
-                    skills: data.resume_claims?.skills_list || ["React", "Python", "TypeScript"],
+                    candidate_id: data.audit?.contact_details?.name || data.candidate_id || candidateName || "Candidate",
+                    skills: extractedSkills,
                     focus_topics: [], // Initially empty, recruiter selects
-                    integrity_check: data.summary?.integrity_level !== "Low",
+                    integrity_check: data.audit?.summary?.integrity_level !== "Low",
                     backendData: data // Store full response for rich display
                 });
             } else {
-                console.error("[AEGIS] Upload failed:", response.status);
+                const errorText = await response.text();
+                console.error("[AEGIS] Upload failed:", response.status, errorText);
                 // Fallback to mock data
                 setProfile({
                     candidate_id: candidateName || "Candidate",
@@ -675,29 +780,71 @@ export default function DashboardPage() {
     const handleDeploy = async () => {
         const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
 
-        // Send focus_config to Utkarsh's backend
-        const focusConfig = {
-            candidate_id: profile?.candidate_id,
-            focus_topics: profile?.focus_topics || [],
-            integrity_check: profile?.integrity_check ?? true
-        };
+        // candidate_id comes from backend response, focus_topics from user selection
+        const candidateId = profile?.backendData?.candidate_id || profile?.candidate_id || "unknown";
+        const selectedFocusTopics = profile?.focus_topics || [];
 
         try {
-            console.log("[AEGIS] Sending focus config:", focusConfig);
+            console.log("[AEGIS] Step 1: Sending focus topics to backend...");
+            console.log("[AEGIS] Candidate ID:", candidateId);
+            console.log("[AEGIS] Selected Focus Topics:", selectedFocusTopics);
 
-            await fetch(`${API_BASE}/focus-config`, {
+            // Step 1: Set focus topics (must be called BEFORE starting interview)
+            const focusResponse = await fetch(`${API_BASE}/api/set-focus-topics`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                     "ngrok-skip-browser-warning": "true"
                 },
-                body: JSON.stringify(focusConfig)
+                body: JSON.stringify({
+                    candidate_id: candidateId,
+                    focus_topics: selectedFocusTopics
+                })
             });
-        } catch (error) {
-            console.warn("[AEGIS] Focus config send failed (non-blocking):", error);
-        }
 
-        router.push(`/interview/room`);
+            if (focusResponse.ok) {
+                const focusResult = await focusResponse.json();
+                console.log("[AEGIS] Focus topics saved:", focusResult);
+            } else {
+                console.warn("[AEGIS] Focus topics API returned non-OK status:", focusResponse.status);
+            }
+
+            // Step 2: Start interview and get LiveKit credentials
+            console.log("[AEGIS] Step 2: Starting interview...");
+            const interviewResponse = await fetch(`${API_BASE}/start-interview`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "ngrok-skip-browser-warning": "true"
+                },
+                body: JSON.stringify({
+                    candidate_id: candidateId
+                })
+            });
+
+            if (interviewResponse.ok) {
+                const interviewData = await interviewResponse.json();
+                console.log("[AEGIS] Interview started:", interviewData);
+
+                // Navigate to interview room with LiveKit credentials
+                const params = new URLSearchParams({
+                    token: interviewData.token || "",
+                    room: interviewData.room_name || "",
+                    candidate: candidateId
+                });
+
+                router.push(`/interview/room?${params.toString()}`);
+            } else {
+                console.error("[AEGIS] Failed to start interview:", interviewResponse.status);
+                // Fallback: navigate anyway (room might handle token generation)
+                router.push(`/interview/room?candidate=${encodeURIComponent(candidateId)}`);
+            }
+
+        } catch (error) {
+            console.error("[AEGIS] Deploy error:", error);
+            // Fallback navigation
+            router.push(`/interview/room`);
+        }
     };
 
     return (

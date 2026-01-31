@@ -84,6 +84,17 @@
   animation: scan 2s linear infinite;
 }
 
+/* Shimmer Animation for Buttons */
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
