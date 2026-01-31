@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 # --- Nested Components matching AegisForge PDF ---
 
@@ -53,6 +53,9 @@ class FSIR(BaseModel):
     communication_metrics: List[CommunicationMetric]
     skill_validation: List[SkillValidation]
     agent_consensus: AgentConsensus
+    
+    # [NEW] FAANG Competency Grid
+    faang_evaluation: Optional[Dict[str, str]] = None
 
 # --- DQI Calculator Schemas ---
 

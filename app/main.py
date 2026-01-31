@@ -137,7 +137,14 @@ async def my_agent(ctx: JobContext):
     # Initialize Components
     groq_key = os.getenv("GROQ_API_KEY")
     groq_llm = groq.LLM(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant", # [FALLBACK] Rate Limit on 70b
+        api_key=groq_key,
+    )
+    
+    # [FIX] Use separate model for Observer to split Rate Limits
+    # Mixtral has separate quota? Or at least reduces 8b usage load
+    observer_llm = groq.LLM(
+        model="mixtral-8x7b-32768", 
         api_key=groq_key,
     )
     
@@ -167,6 +174,9 @@ async def my_agent(ctx: JobContext):
         tts=deepgram.TTS(model="aura-asteria-en"),
         
         vad=ctx.proc.userdata["vad"],
+        
+        # [TUNING] Reduce sensitivity to short noises
+        min_endpointing_delay=0.5,
     )
 
     # 1. Incident Lead (Hiring Manager)
@@ -207,6 +217,13 @@ async def my_agent(ctx: JobContext):
     candidate_name = None
     if knowledge_engine.candidate_context:
         candidate_name = knowledge_engine.candidate_context.get('name', None)
+        domain = knowledge_engine.candidate_context.get('detected_field', scenario.domain)
+        
+        # [FIX] Update Loggers with Candidate Info
+        if candidate_name:
+            audit_logger.update_candidate_info(candidate_name, domain)
+            questions_logger.candidate_name = candidate_name
+            questions_logger.domain = domain
     
     crisis_popup_agent = CrisisPopupAgent(
         room=ctx.room,
@@ -214,8 +231,9 @@ async def my_agent(ctx: JobContext):
         llm_instance=groq_llm,
         audit_logger=audit_logger,
         lead_agent=lead_agent_logic,
-        min_delay_seconds=180,  # 3 minutes
-        max_delay_seconds=480   # 8 minutes
+        session=session,        # [FIX] Pass session for immediate speech
+        min_delay_seconds=60,   # 1 minute (User Request)
+        max_delay_seconds=120   # 2 minutes max
     )
     if candidate_name:
         crisis_popup_agent.set_candidate_name(candidate_name)
@@ -297,6 +315,9 @@ async def my_agent(ctx: JobContext):
             print(f"DEBUG: User Speech Detected: {ev.transcript}")  # <--- Added Debug
             audit_logger.log_event("Candidate", "TRANSCRIPT", ev.transcript)
             observer_agent.log_turn("candidate", ev.transcript)
+            
+            # [FIX] Log User Answer
+            questions_logger.log_answer(ev.transcript)
 
             # --- GOVERNOR SAFETY CHECK [NEW] ---
             # We pass a default confidence of 1.0 for now as we don't have real-time confidence stream
@@ -419,6 +440,12 @@ async def my_agent(ctx: JobContext):
     async def cleanup():
         try:
             audit_logger.log_event("System", "SESSION_END", "Interview session ended")
+            
+            # [FIX] Wait for pending evaluations before generating report
+            try:
+                await observer_agent.await_pending_evaluations()
+            except Exception as e:
+                logger.error(f"Failed to await observer tasks: {e}")
             
             dqi_data = observer_agent.generate_dqi_report()
             audit_logs = audit_logger.export_logs()

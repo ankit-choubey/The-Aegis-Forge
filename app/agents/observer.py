@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 from livekit.agents import llm
 from app.agents.base import AegisAgentBase
 from app.agents.prompts import OBSERVER_SYSTEM
+from app.agents.rubrics.faang_swe import FAANG_OBSERVER_SYSTEM
 
 logger = logging.getLogger("aegis.agents.observer")
 
@@ -29,7 +30,9 @@ class ObserverAgent(AegisAgentBase):
         self.metrics = metrics
         self.transcript_log: List[Dict[str, Any]] = []
         self.evaluations: List[str] = [] # Store raw JSON strings from LLM
-        self.system_prompt = self._build_system_prompt(OBSERVER_SYSTEM)
+        # [FAANG UPGRADE] Use FAANG Rubric instead of standard prompt
+        self.system_prompt = self._build_system_prompt(FAANG_OBSERVER_SYSTEM)
+        self.pending_tasks = set() # [FIX] Track active evaluations
 
 
     def log_turn(self, speaker: str, text: str):
@@ -39,7 +42,10 @@ class ObserverAgent(AegisAgentBase):
         self.transcript_log.append(entry)
         
         # Async evaluation
-        asyncio.create_task(self._evaluate_turn(text))
+        # Async evaluation [FIX] Track the task
+        task = asyncio.create_task(self._evaluate_turn(text))
+        self.pending_tasks.add(task)
+        task.add_done_callback(self.pending_tasks.discard)
         
     async def _evaluate_turn(self, turn_text: str):
         """
@@ -101,3 +107,13 @@ class ObserverAgent(AegisAgentBase):
         """
         # We use the stored self.evaluations which contains the raw JSON strings from the LLM
         return dqi_calculator.calculate_score("current_session", self.evaluations).model_dump()
+
+    async def await_pending_evaluations(self):
+        """[FIX] Wait for all pending LLM calls to finish before reporting."""
+        if not self.pending_tasks:
+            return
+        logger.info(f">>> Waiting for {len(self.pending_tasks)} pending Observer evaluations...")
+        try:
+            await asyncio.wait(self.pending_tasks, timeout=10) # 10s max wait
+        except Exception as e:
+            logger.error(f"Error waiting for observer tasks: {e}")

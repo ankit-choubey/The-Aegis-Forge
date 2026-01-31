@@ -154,6 +154,33 @@ class PDFReportGenerator:
             ('PADDING', (0,0), (-1,-1), 10),
         ]))
         elements.append(agent_table)
+        elements.append(Spacer(1, 20))
+
+        # 6. FAANG Competency Matrix [NEW]
+        if fsir_data.get('faang_evaluation'):
+            elements.append(Paragraph("- FAANG Competency Matrix", self.styles['AegisSection']))
+            
+            fe = fsir_data['faang_evaluation']
+            matrix_data = [
+                ["Dimension", "Rating"],
+                ["Communication", fe.get('communication', 'N/A')],
+                ["Problem Solving", fe.get('problem_solving', 'N/A')],
+                ["Technical Competency", fe.get('technical', 'N/A')],
+                ["Testing", fe.get('testing', 'N/A')]
+            ]
+            
+            matrix_table = Table(matrix_data, colWidths=[3*inch, 3*inch])
+            matrix_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), self.accent_color),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 1, colors.grey),
+                ('BACKGROUND', (0,1), (-1,-1), colors.white),
+                ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+                ('TEXTCOLOR', (1,1), (-1,-1), self.primary_color),
+                ('FONTNAME', (1,1), (-1,-1), 'Helvetica-Bold'),
+            ]))
+            elements.append(matrix_table)
 
         # Build PDF
         doc.build(elements)

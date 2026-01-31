@@ -14,44 +14,34 @@ logger = logging.getLogger("AEGIS-PATHWAY")
 # Field-specific market intel
 FIELD_MARKET_INTEL = {
     "ai_ml": (
-        "MARKET INTEL: Data drift is the #1 cause of ML model degradation. "
-        "Feature stores are becoming standard infrastructure. "
-        "LLM hallucination detection is a hot research area. "
-        "MLOps maturity is a key differentiator for teams. "
-        "Model monitoring and A/B testing are critical skills."
+        "CODING INTEL: Use PyTorch Lightning for cleaner loops. "
+        "Avoid manual tensor shape hardcoding (use .view(-1)). "
+        "Prefer VectorDB over raw embeddings for retrieval."
     ),
     "cybersecurity": (
-        "MARKET INTEL: VPN zero-days and supply chain attacks are trending. "
-        "Ransomware groups using 'double extortion' tactics. "
-        "AI-generated phishing is a major new threat vector. "
-        "SIEM tuning and threat hunting are in-demand skills. "
-        "SOC automation and SOAR platforms are growing."
+        "CODING INTEL: Sanitize all inputs (OWASP Top 10). "
+        "Use 'bcrypt' or 'Argon2' for hashing, NEVER MD5. "
+        "Assume Zero Trust for all API endpoints."
     ),
     "blockchain": (
-        "MARKET INTEL: Smart contract audits are critical after recent exploits. "
-        "Gas optimization is a key differentiator. "
-        "Cross-chain bridges are major security risks. "
-        "DeFi protocol design requires deep understanding of MEV. "
-        "L2 solutions like Arbitrum and Optimism are dominant."
+        "CODING INTEL: Re-entrancy attacks (CEI pattern) are critical. "
+        "Optimize Gas Layout (pack variables). "
+        "Use 'Foundry' for fuzz testing smart contracts."
     ),
     "devops": (
-        "MARKET INTEL: AWS outages, Kubernetes deprecations, "
-        "and Terraform licensing are hot topics. "
-        "GitOps and ArgoCD adoption is accelerating. "
-        "Platform engineering is the new DevOps. "
-        "FinOps and cost optimization are critical."
+        "CODING INTEL: Use Multi-stage Docker builds to reduce image size. "
+        "Avoid hardcoded IP addresses; uses DNS/Service Discovery. "
+        "Implement 'Circuit Breakers' in Helm charts."
     ),
     "backend": (
-        "MARKET INTEL: Moving from microservices back to monoliths is discussed. "
-        "AsyncIO performance tuning is a common interview topic. "
-        "Vector Database integration is a high-demand skill. "
-        "Connection pooling issues are common in high-traffic systems."
+        "CODING INTEL: Use Connection Pooling (e.g. PgBouncer). "
+        "Avoid N+1 Query problem in ORMs (Django/JPA). "
+        "Implement Idempotency Keys for critical APIs."
     ),
     "frontend": (
-        "MARKET INTEL: React Server Components are changing the game. "
-        "Edge rendering and ISR are key performance topics. "
-        "TypeScript adoption is now standard. "
-        "Core Web Vitals optimization is critical for SEO."
+        "CODING INTEL: Avoid Prop Drilling; use Context or Zustand. "
+        "Use key={id} NOT key={index} in lists. "
+        "Memoize heavy calculations (useMemo/useCallback)."
     )
 }
 
@@ -100,6 +90,9 @@ class AegisKnowledgeEngine:
              else:
                  name = "unknown_candidate"
         
+        # 3.5 Load Focus Topics (Recruiter Dashboard)
+        self.load_focus_topics()
+        
         # 3. Save Audit JSON
         output_filename = f"uploads/{name}_audit.json"
         
@@ -114,7 +107,30 @@ class AegisKnowledgeEngine:
         # 4. Load into Context
         self.candidate_context = audit_data 
         
+        # 5. Load Recruiter Focus Topics
+        self.load_focus_topics()
+        
         return audit_data
+
+    def load_focus_topics(self) -> list:
+        """
+        Loads recruiter-selected focus topics from uploads/focus_config.json
+        """
+        try:
+            config_path = "uploads/focus_config.json"
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    data = json.load(f)
+                    topics = data.get("focus_topics", [])
+                    if topics:
+                        logger.info(f"[[FOCUS RELOAD]] Found Recruiter Focus Topics: {topics}")
+                        if self.candidate_context is None:
+                            self.candidate_context = {}
+                        self.candidate_context["focus_topics"] = topics
+                        return topics
+        except Exception as e:
+            logger.error(f"Failed to load focus topics: {e}")
+        return []
 
     async def _fetch_market_data(self, role: str) -> str:
         """
@@ -134,15 +150,22 @@ class AegisKnowledgeEngine:
         try:
             client = AsyncOpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
             
+            # [DYNAMIC] Inject Candidate Skills if available
+            skills_context = ""
+            if self.candidate_context and "skills" in self.candidate_context:
+                top_skills = self.candidate_context["skills"][:5] # Top 5
+                skills_context = f"Candidate uses: {', '.join(top_skills)}."
+
             prompt = (
-                f"You are a Senior Tech Recruiter. Provide 3 critical, modern technical trends/failures "
-                f"relevant to a '{role}' role in 2024/2025. "
-                f"Focus on specific technologies, outages, or architectural shifts. "
-                f"Format as a concise paragraph starting with 'MARKET INTEL:'."
+                f"You are a Principal Software Engineer. Provide 3 critical 'CODING STANDARDS' or 'ANTI-PATTERNS' "
+                f"specifically for a '{role}' role in 2025. {skills_context} "
+                f"Focus on library-specific best practices (e.g. React useEffect rules, Python concurrency), "
+                f"security pitfalls (e.g. SQLi, XSS), and architectural clean code principles. "
+                f"Format as a concise paragraph starting with 'CODING INTEL:'."
             )
             
             completion = await client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant", # [FALLBACK] Rate Limit on 70b
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
                 max_tokens=150

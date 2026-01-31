@@ -90,6 +90,16 @@ class InterviewPipeline:
             panel_confidence="85%"
         )
 
+        # 8. Extract FAANG Evaluation from Observer logs
+        faang_grid = {}
+        for event in audit_logs:
+             # Check distinct keys for actor/event_type depending on audit log structure
+             # Assuming standard structure from audit_logger.py
+             if event.get("actor") == "ObserverAgent" and event.get("event_type") == "EVALUATION_COMPLETE":
+                 meta = event.get("metadata", {})
+                 if "faang_evaluation" in meta:
+                     faang_grid = meta["faang_evaluation"]
+
         # Assemble the Final Report
         return FSIR(
             candidate_id=data.get("candidate_id", "unknown"),
@@ -102,5 +112,6 @@ class InterviewPipeline:
             integrity_signals=integrity,
             communication_metrics=comm_metrics,
             skill_validation=skills,
-            agent_consensus=consensus
+            agent_consensus=consensus,
+            faang_evaluation=faang_grid or None
         )

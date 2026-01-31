@@ -33,6 +33,7 @@ class CrisisPopupAgent:
         llm_instance: llm.LLM,
         audit_logger: SessionAuditLogger,
         lead_agent: Any = None,
+        session: Any = None,  # [ADDED] for immediate speech
         min_delay_seconds: int = 180,  # 3 minutes
         max_delay_seconds: int = 480   # 8 minutes
     ):
@@ -41,6 +42,7 @@ class CrisisPopupAgent:
         self._llm = llm_instance
         self._audit_logger = audit_logger
         self._lead_agent = lead_agent
+        self._session = session # [ADDED]
         self._min_delay = min_delay_seconds
         self._max_delay = max_delay_seconds
         
@@ -164,6 +166,11 @@ class CrisisPopupAgent:
                 )
                 self._lead_agent.chat_ctx.add_message(role="system", content=pivot_prompt)
                 logger.info(">>> Injected crisis into lead agent context")
+                
+                # [FIX] Force immediate speech if session controls available
+                if self._session and hasattr(self._session, 'say'):
+                     asyncio.create_task(self._session.say(f"Hold on. I need to interrupt. {question}", allow_interruptions=False))
+                     logger.info(">>> [CRISIS] Forced immediate speech.")
             except Exception as e:
                 logger.error(f">>> Failed to inject into lead agent: {e}")
                 

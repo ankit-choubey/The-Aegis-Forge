@@ -41,3 +41,13 @@ class SessionAuditLogger:
         Export all logs as a list of dictionaries.
         """
         return [dataclasses.asdict(e) for e in self.events]
+    
+    def update_candidate_info(self, name: str, domain: str = None):
+        """
+        Update candidate details after they are loaded from Knowledge Engine.
+        """
+        self.candidate_id = name
+        if domain:
+            self.domain = domain
+        # Log this update as a system event
+        self.log_event("System", "CANDIDATE_UPDATE", f"Identified Candidate: {name} (Domain: {domain})")
