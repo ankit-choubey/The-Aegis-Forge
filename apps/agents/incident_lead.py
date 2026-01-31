@@ -28,11 +28,12 @@ class IncidentLead(Agent, AegisAgentBase):
     The Hiring Manager / Incident Lead.
     Now enhanced with Knowledge Engine for dynamic market intel.
     """
-    def __init__(self, scenario: Scenario, llm_instance: llm.LLM, audit_logger: SessionAuditLogger, room=None):
+    def __init__(self, scenario: Scenario, llm_instance: llm.LLM, audit_logger: SessionAuditLogger, room=None, qgen_llm: llm.LLM = None):
         # Init Base Logic
         AegisAgentBase.__init__(self, persona=scenario.hiring_manager_persona, context=scenario.context, llm_instance=llm_instance, audit_logger=audit_logger)
         
         self.scenario = scenario
+        self.qgen_llm = qgen_llm or llm_instance # Default to main LLM if not provided
         self.initial_problem = scenario.initial_problem
         self.room = room  # [FIX] Save room reference for later use
         
@@ -72,10 +73,18 @@ class IncidentLead(Agent, AegisAgentBase):
                 intro_script = "So, first introduce yourself and tell me something NOT mentioned in your resume."
 
 
+                # [RECRUITER DASHBOARD] Check for Focus Topics
+                focus_topics_list = knowledge_engine.candidate_context.get('focus_topics', [])
+                focus_instruction = ""
+                if focus_topics_list:
+                     focus_msg = ", ".join(focus_topics_list)
+                     focus_instruction = f"\n[RECRUITER PRIORITY]: The hiring manager requested a deep dive on: {focus_msg}. You MUST ask at least 2 challenging questions about these topics.\n"
+
                 # Personalize Persona Instructions
                 personalized_instructions = (
                     f"{scenario.hiring_manager_persona.instructions}\n"
                     f"IMPORTANT: You are interviewing {cand_name}. Start by greeting them by name.\n"
+                    f"{focus_instruction}"
                     f"{FAANG_INTERVIEWER_GUIDE}"
                 )
                 
@@ -111,7 +120,7 @@ class IncidentLead(Agent, AegisAgentBase):
                         loop = asyncio.get_running_loop()
                         # Loop is running, schedule as task (won't block)
                         self._pending_question_gen = asyncio.create_task(
-                            generate_dynamic_questions(knowledge_engine.candidate_context, llm_instance)
+                            generate_dynamic_questions(knowledge_engine.candidate_context, self.qgen_llm) # [FIX] Use QGen LLM
                         )
                         logger.info(">>> Dynamic question generation scheduled (async).")
                     except RuntimeError:
