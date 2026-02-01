@@ -6,7 +6,8 @@ import {
     Download, Share2, CheckCircle, AlertTriangle, XCircle,
     Clock, Shield, Activity, User, Briefcase, Calendar,
     Eye, MousePointer, Keyboard, ChevronDown, ChevronUp,
-    Zap, Brain, Target, TrendingUp, FileText, ExternalLink
+    Zap, Brain, Target, TrendingUp, FileText, ExternalLink,
+    Linkedin, Github
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -66,7 +67,18 @@ const sampleReportData = {
         { speaker: "CANDIDATE", text: "Thank you, I'm ready to begin.", timestamp: "10:00:15" },
         { speaker: "AGENT", text: "Design a scalable notification system that can handle 10 million users.", timestamp: "10:00:30" },
         { speaker: "CANDIDATE", text: "I would approach this using a message queue architecture with Redis for real-time delivery...", timestamp: "10:01:00" }
-    ]
+    ],
+
+    // NEW: Integrity Signals with Social Verification
+    integrity_signals: {
+        confidence_score: "90%",
+        signals_observed: ["Mole Agent attempted baiting."],
+        social_verification: {
+            consistency_score: 92,
+            verified_links: ["LinkedIn", "GitHub"],
+            signals: ["✅ LinkedIn Profile Found", "✅ GitHub Activity Matches Resume"]
+        }
+    }
 };
 
 // ============================================
@@ -79,13 +91,15 @@ const ScoreCard = ({
     value,
     icon: Icon,
     color,
-    suffix = "%"
+    suffix = "%",
+    children
 }: {
     title: string;
     value: number;
     icon: React.ElementType;
     color: string;
     suffix?: string;
+    children?: React.ReactNode;
 }) => {
     const getBarColor = () => {
         if (value >= 80) return "bg-emerald-500";
@@ -94,7 +108,7 @@ const ScoreCard = ({
     };
 
     return (
-        <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-950/80 border border-white/10 rounded-xl p-5 backdrop-blur-sm">
+        <div className="bg-gradient-to-br from-zinc-900/80 to-zinc-950/80 border border-white/10 rounded-xl p-5 backdrop-blur-sm flex flex-col h-full">
             <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2.5 rounded-lg ${color}`}>
                     <Icon className="w-5 h-5 text-white" />
@@ -111,6 +125,7 @@ const ScoreCard = ({
                     style={{ width: `${value}%` }}
                 />
             </div>
+            {children}
         </div>
     );
 };
@@ -152,6 +167,41 @@ const DecisionBadge = ({ decision }: { decision: "ADVANCE" | "HOLD" | "REJECT" }
             <div>
                 <p className="text-zinc-500 text-xs font-mono tracking-widest mb-1">FINAL DECISION</p>
                 <p className={`text-3xl font-bold ${text} font-mono tracking-wider`}>{label}</p>
+            </div>
+        </div>
+    );
+};
+
+// Social Integrity Component
+const SocialIntegrity = ({ data }: { data: typeof sampleReportData.integrity_signals.social_verification }) => {
+    const { consistency_score, verified_links } = data;
+
+    return (
+        <div className="mt-4 p-3 bg-white/10 rounded-lg border border-white/5">
+            <h4 className="text-sm font-bold text-white mb-2">Social Footprint</h4>
+
+            <div className="flex items-center gap-2 mb-3">
+                <span className="text-xs text-zinc-400">Consistency:</span>
+                <div className="flex-1 h-1.5 bg-zinc-700/50 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full ${consistency_score > 80 ? 'bg-emerald-400' : 'bg-yellow-400'}`}
+                        style={{ width: `${consistency_score}%` }}
+                    />
+                </div>
+                <span className="text-xs font-mono text-white">{consistency_score}%</span>
+            </div>
+
+            <div className="flex gap-2">
+                {verified_links.includes("LinkedIn") && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-[#0077b5]/20 border border-[#0077b5]/30 rounded text-[#0077b5] text-[10px] font-bold">
+                        <Linkedin className="w-3 h-3" /> LinkedIn
+                    </div>
+                )}
+                {verified_links.includes("GitHub") && (
+                    <div className="flex items-center gap-1 px-2 py-1 bg-white/10 border border-white/20 rounded text-zinc-300 text-[10px] font-bold">
+                        <Github className="w-3 h-3" /> GitHub
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -311,7 +361,11 @@ export default function FSIRReportPage() {
                         value={report.scores.integrity_confidence}
                         icon={Shield}
                         color="bg-gradient-to-br from-emerald-500 to-emerald-600"
-                    />
+                    >
+                        {report.integrity_signals?.social_verification && (
+                            <SocialIntegrity data={report.integrity_signals.social_verification} />
+                        )}
+                    </ScoreCard>
                     <ScoreCard
                         title="TECHNICAL"
                         value={report.scores.technical_score}

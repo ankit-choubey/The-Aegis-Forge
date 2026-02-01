@@ -2,7 +2,7 @@ import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 import { type NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
-    const room = req.nextUrl.searchParams.get('room') || 'default-room';
+    const room = req.nextUrl.searchParams.get('room') || 'aegis-demo-room';
     const username = req.nextUrl.searchParams.get('username') || 'user-' + Math.random().toString(36).substring(7);
 
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -15,7 +15,13 @@ export async function GET(req: NextRequest) {
 
     // 1. Generate token for user
     const at = new AccessToken(apiKey, apiSecret, { identity: username });
-    at.addGrant({ roomJoin: true, room: room, canPublish: true, canSubscribe: true });
+    at.addGrant({
+        roomJoin: true,
+        room: room,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true // Required for Human Takeover Signal
+    });
 
     // 2. Dispatch the agent to this room
     try {

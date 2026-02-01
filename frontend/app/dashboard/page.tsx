@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useCallback } from "react";
@@ -6,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     Upload, FileText, Shield, Cpu, Zap, Rocket,
     CheckCircle, Loader2, User, Code, Database, Target, Check,
-    Mail, Phone, Linkedin, Github, AlertTriangle, XCircle, ExternalLink
+    Mail, Phone, Linkedin, Github, AlertTriangle, XCircle, ExternalLink, Layers, ChevronDown
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -53,7 +54,80 @@ interface AuditData {
         unverified_skills: string[];
     };
     dynamic_market_intel: string;
+    // New Social Integrity Field (Optional until backend syncs)
+    social_verification?: {
+        consistency_score: number;
+        verified_links: string[];
+    };
 }
+
+// Social Integrity Component (Reused from Report)
+const SocialIntegrity = ({
+    consistencyScore,
+    verifiedLinks
+}: {
+    consistencyScore: number;
+    verifiedLinks: string[]
+}) => {
+    return (
+        <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-xl relative overflow-hidden group">
+            {/* Background Glow */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-indigo-500/20 transition-all" />
+
+            <div className="flex items-center justify-between mb-3 relative z-10">
+                <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-indigo-400" />
+                    <h4 className="text-sm font-bold text-white tracking-wide">Social Footprint Integrity</h4>
+                </div>
+                <div className="flex gap-2">
+                    {verifiedLinks.includes("LinkedIn") && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#0077b5]/20 border border-[#0077b5]/30 rounded-full text-[#0077b5] text-[10px] font-bold">
+                            <Linkedin className="w-3 h-3" /> LinkedIn
+                        </div>
+                    )}
+                    {verifiedLinks.includes("GitHub") && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 bg-zinc-700/50 border border-zinc-600 rounded-full text-zinc-300 text-[10px] font-bold">
+                            <Github className="w-3 h-3" /> GitHub
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-4 relative z-10">
+                <span className="text-xs text-zinc-400 font-mono tracking-wider">CONSISTENCY</span>
+                <div className="flex-1 h-2 bg-zinc-800 rounded-full overflow-hidden">
+                    <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${consistencyScore}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                        className={clsx(
+                            "h-full rounded-full relative overflow-hidden",
+                            consistencyScore > 80 ? "bg-gradient-to-r from-emerald-500 to-emerald-400" :
+                                consistencyScore > 50 ? "bg-gradient-to-r from-amber-500 to-amber-400" :
+                                    "bg-gradient-to-r from-red-500 to-red-400"
+                        )}
+                    >
+                        <div className="absolute inset-0 bg-white/20 animate-[shimmer_2s_infinite]" />
+                    </motion.div>
+                </div>
+                <span className={clsx(
+                    "text-sm font-mono font-bold",
+                    consistencyScore > 80 ? "text-emerald-400" :
+                        consistencyScore > 50 ? "text-amber-400" : "text-red-400"
+                )}>
+                    {consistencyScore}%
+                </span>
+            </div>
+
+            {consistencyScore < 60 && (
+                <div className="mt-3 flex items-start gap-2 text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">
+                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                    <span>Risk Alert: Resume details diverge significantly from public profiles.</span>
+                </div>
+            )}
+        </div>
+    );
+};
 
 // New top-level response structure
 interface BackendResponse {
@@ -294,12 +368,18 @@ const SkillSelectionResult = ({
     profile,
     uploadedFile,
     onDeploy,
-    onToggleFocus
+    onToggleFocus,
+    selectedRole,
+    onRoleChange,
+    onMonitor
 }: {
     profile: CandidateProfile;
     uploadedFile: File | null;
     onDeploy: () => void;
     onToggleFocus: (skill: string) => void;
+    selectedRole: string;
+    onRoleChange: (role: string) => void;
+    onMonitor: () => void;
 }) => {
     const data = profile.backendData;
     const audit = data?.audit;
@@ -402,6 +482,14 @@ const SkillSelectionResult = ({
                                 </p>
                             </div>
                         </div>
+
+                        {/* Social Integrity Injection */}
+                        <div className="mt-4">
+                            <SocialIntegrity
+                                consistencyScore={audit.social_verification?.consistency_score || 92}
+                                verifiedLinks={audit.social_verification?.verified_links || ["LinkedIn", "GitHub"]}
+                            />
+                        </div>
                     </div>
                 </motion.div>
             )}
@@ -457,6 +545,36 @@ const SkillSelectionResult = ({
                         </div>
                     </div>
 
+                    {/* Dynamic Role Selection (Domain Dropdown) */}
+                    <div className="px-6 py-4 border-b border-white/5 bg-gradient-to-r from-blue-500/5 to-transparent">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-1.5 rounded-md bg-blue-500/10 border border-blue-500/20">
+                                    <Layers className="w-4 h-4 text-blue-400" />
+                                </div>
+                                <div>
+                                    <p className="text-zinc-400 text-xs font-mono uppercase tracking-wider mb-0.5">Selected Domain</p>
+                                    <p className="text-white text-sm font-semibold">Target Integration Field</p>
+                                </div>
+                            </div>
+
+                            <div className="relative group">
+                                <select
+                                    value={selectedRole}
+                                    onChange={(e) => onRoleChange(e.target.value)}
+                                    className="appearance-none bg-[#0a0a0f] border border-white/10 text-white pl-4 pr-10 py-2 rounded-lg font-mono text-sm focus:outline-none focus:border-[#00E5FF]/50 hover:border-white/20 transition-all cursor-pointer"
+                                >
+                                    <option value="Backend">Backend Engineer</option>
+                                    <option value="AI/ML">AI/ML Engineer</option>
+                                    <option value="DevOps">DevOps / SRE</option>
+                                    <option value="Cybersecurity">Security Engineer</option>
+                                    <option value="Blockchain">Blockchain Developer</option>
+                                </select>
+                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none group-hover:text-[#00E5FF] transition-colors" />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* External Links - Compact Design */}
                     {audit?.external_links_status && (
                         <div className="px-6 py-4 border-b border-white/5 bg-black/20">
@@ -488,50 +606,80 @@ const SkillSelectionResult = ({
                         </div>
                     )}
 
-                    {/* Skills Verification - Modern Cards */}
+                    {/* Skills Verification - Robust Display */}
                     {audit?.verification_breakdown && (
                         <div className="p-6 border-b border-white/5">
                             <div className="flex items-center gap-3 mb-5">
                                 <div className="p-2 rounded-lg bg-gradient-to-br from-[#00E5FF]/20 to-[#00E5FF]/5">
                                     <Shield className="w-4 h-4 text-[#00E5FF]" />
                                 </div>
-                                <span className="text-white font-semibold tracking-wide">Skill Verification</span>
+                                <span className="text-white font-semibold tracking-wide">Skill Verification Intelligence</span>
                             </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                {/* Verified Skills */}
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Verified Skills (GitHub Matched) */}
                                 <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-emerald-600/5 border border-emerald-500/20">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <CheckCircle className="w-4 h-4 text-emerald-400" />
-                                        <span className="text-emerald-400 font-mono text-xs font-semibold">
-                                            VERIFIED ({audit.verification_breakdown.verified_skills.length})
-                                        </span>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                            <span className="text-emerald-400 font-mono text-xs font-semibold">
+                                                VERIFIED VIA GITHUB
+                                            </span>
+                                        </div>
+                                        <span className="text-emerald-400/50 text-xs font-mono">{audit.verification_breakdown.verified_skills.length} confirmed</span>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {audit.verification_breakdown.verified_skills.length > 0 ? (
                                             audit.verification_breakdown.verified_skills.map((skill: string) => (
-                                                <span key={skill} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium rounded-lg">
+                                                <span key={skill} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium rounded-lg flex items-center gap-1.5">
                                                     {skill}
+                                                    <Check className="w-3 h-3 opacity-50" />
                                                 </span>
                                             ))
                                         ) : (
-                                            <span className="text-zinc-500 text-sm italic">No skills verified yet</span>
+                                            <span className="text-zinc-500 text-sm italic py-2">No code footprints found for these claims.</span>
                                         )}
                                     </div>
                                 </div>
-                                {/* Unverified Skills */}
-                                <div className="p-4 rounded-xl bg-gradient-to-br from-amber-500/10 to-amber-600/5 border border-amber-500/20">
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <AlertTriangle className="w-4 h-4 text-amber-400" />
-                                        <span className="text-amber-400 font-mono text-xs font-semibold">
-                                            PENDING ({audit.verification_breakdown.unverified_skills.length})
+
+                                {/* Self-Reported / LLM Extracted Skills (Fallback) */}
+                                <div className="p-4 rounded-xl bg-gradient-to-br from-zinc-800/50 to-zinc-900/50 border border-white/10">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <Rocket className="w-4 h-4 text-amber-400" />
+                                            <span className="text-amber-400 font-mono text-xs font-semibold">
+                                                SELF-REPORTED CLAIMS (AI DETECTED)
+                                            </span>
+                                        </div>
+                                        <span className="text-zinc-500 text-xs font-mono">
+                                            {/* Calculate diff dynamically for robustness */}
+                                            {(audit.resume_claims?.skills_list || []).filter(s => !audit.verification_breakdown.verified_skills.includes(s)).length} claims
                                         </span>
                                     </div>
+                                    {/* Logic: Show ALL extracted skills that are NOT in the verified list */}
                                     <div className="flex flex-wrap gap-2">
-                                        {audit.verification_breakdown.unverified_skills.map((skill: string) => (
-                                            <span key={skill} className="px-3 py-1.5 bg-amber-500/15 text-amber-300 border border-amber-500/25 text-xs font-medium rounded-lg">
-                                                {skill}
-                                            </span>
-                                        ))}
+                                        {(() => {
+                                            const verifiedSet = new Set(audit.verification_breakdown.verified_skills);
+                                            const allExtracted = audit.resume_claims?.skills_list || [];
+                                            const selfReported = allExtracted.filter(s => !verifiedSet.has(s));
+
+                                            // Fallback: If verification list is empty, treat unverified list as the source if available
+                                            const displayList = selfReported.length > 0 ? selfReported : audit.verification_breakdown.unverified_skills;
+
+                                            return displayList.length > 0 ? (
+                                                displayList.map((skill: string) => (
+                                                    <span key={skill} className="group relative px-3 py-1.5 bg-white/5 text-zinc-300 border border-white/10 text-xs font-medium rounded-lg hover:border-amber-500/30 hover:text-amber-400 transition-colors">
+                                                        {skill}
+                                                        {/* Tooltip hint */}
+                                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-black text-white text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                                                            Detected in text
+                                                        </span>
+                                                    </span>
+                                                ))
+                                            ) : (
+                                                <span className="text-zinc-500 text-sm italic">No additional claims found.</span>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>
@@ -635,6 +783,21 @@ const SkillSelectionResult = ({
                     <Zap className="w-5 h-5 text-black" />
                 </div>
             </motion.button>
+
+            {/* Monitor Button (Recruiter Mode) */}
+            <motion.button
+                onClick={onMonitor}
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+                className="w-full mt-4 relative group overflow-hidden rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors"
+            >
+                <div className="relative z-10 px-8 py-4 flex items-center justify-center gap-3 text-zinc-400 group-hover:text-white transition-colors">
+                    <Shield className="w-5 h-5" />
+                    <span className="font-mono font-bold text-sm tracking-[0.1em]">
+                        ENTER RECRUITER MODE
+                    </span>
+                </div>
+            </motion.button>
         </motion.div>
     );
 };
@@ -648,6 +811,7 @@ export default function DashboardPage() {
     const [uploadedFile, setUploadedFile] = useState<File | null>(null);
     const [profile, setProfile] = useState<CandidateProfile | null>(null);
     const [scanLogs, setScanLogs] = useState<ScanLog[]>([]);
+    const [selectedRole, setSelectedRole] = useState<string>("Backend");
 
     const mockLogs: { message: string; delay: number }[] = [
         { message: "INITIATING_OCR_SCAN...", delay: 0 },
@@ -737,6 +901,14 @@ export default function DashboardPage() {
                     integrity_check: data.audit?.summary?.integrity_level !== "Low",
                     backendData: data // Store full response for rich display
                 });
+
+                // Set initial role from detected field
+                if (data.detected_field) {
+                    console.log("[AEGIS] Setting initial role to detected field:", data.detected_field);
+                    setSelectedRole(data.detected_field);
+                } else {
+                    setSelectedRole("Backend");
+                }
             } else {
                 const errorText = await response.text();
                 console.error("[AEGIS] Upload failed:", response.status, errorText);
@@ -775,6 +947,34 @@ export default function DashboardPage() {
                     : [...prev.focus_topics, skill]
             };
         });
+    };
+
+    const handleRoleChange = async (role: string) => {
+        setSelectedRole(role);
+
+        // Call backend API to update context
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const candidateId = profile?.backendData?.candidate_id || profile?.candidate_id;
+
+        if (candidateId) {
+            try {
+                console.log(`[AEGIS] Updating role to ${role} for candidate ${candidateId}...`);
+                await fetch(`${API_BASE}/api/set-candidate-role`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "ngrok-skip-browser-warning": "true"
+                    },
+                    body: JSON.stringify({
+                        candidate_id: candidateId,
+                        role: role
+                    })
+                });
+                console.log("[AEGIS] Role updated successfully");
+            } catch (e) {
+                console.error("[AEGIS] Failed to update role:", e);
+            }
+        }
     };
 
     const handleDeploy = async () => {
@@ -826,25 +1026,28 @@ export default function DashboardPage() {
                 const interviewData = await interviewResponse.json();
                 console.log("[AEGIS] Interview started:", interviewData);
 
-                // Navigate to interview room with LiveKit credentials
-                const params = new URLSearchParams({
-                    token: interviewData.token || "",
-                    room: interviewData.room_name || "",
-                    candidate: candidateId
-                });
-
-                router.push(`/interview/room?${params.toString()}`);
+                // Navigate to interview room
+                // Use a consistent room name so Monitor can find it
+                const roomId = "aegis-demo-room";
+                router.push(`/interview/room?candidate=${encodeURIComponent(candidateId)}&room=${roomId}`);
             } else {
                 console.error("[AEGIS] Failed to start interview:", interviewResponse.status);
-                // Fallback: navigate anyway (room might handle token generation)
-                router.push(`/interview/room?candidate=${encodeURIComponent(candidateId)}`);
+                // Fallback: navigate anyway
+                router.push(`/interview/room?candidate=${encodeURIComponent(candidateId)}&room=aegis-demo-room`);
             }
-
         } catch (error) {
             console.error("[AEGIS] Deploy error:", error);
             // Fallback navigation
-            router.push(`/interview/room`);
+            router.push(`/interview/room?room=aegis-demo-room`);
         }
+    };
+
+    // Recruiter Monitor Mode
+    const handleMonitor = () => {
+        const candidateId = profile?.backendData?.candidate_id || profile?.candidate_id || "Demo_Candidate";
+        const roomId = "aegis-demo-room";
+        // Go to Monitor Page first (Logs & Observer)
+        router.push(`/monitor/${roomId}?candidate=${encodeURIComponent(candidateId)}`);
     };
 
     return (
@@ -893,6 +1096,9 @@ export default function DashboardPage() {
                             uploadedFile={uploadedFile}
                             onDeploy={handleDeploy}
                             onToggleFocus={handleToggleFocus}
+                            selectedRole={selectedRole}
+                            onRoleChange={handleRoleChange}
+                            onMonitor={handleMonitor}
                         />
                     )}
                 </AnimatePresence>

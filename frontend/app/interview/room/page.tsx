@@ -7,9 +7,10 @@ import {
     Settings, Shield, Wifi, Terminal as TerminalIcon, Play, Square, Radio,
     ChevronDown, ChevronUp, Loader2, Code, Laptop,
     Activity, Volume2, Camera, Send, Zap, Cpu, Clock, Download, FileText,
-    Eye, Crown, ToggleRight, User, MessageSquare
+    Eye, Crown, ToggleRight, User, MessageSquare, AlertTriangle
 } from "lucide-react";
 import clsx from "clsx";
+import Editor from "@monaco-editor/react";
 import {
     LiveKitRoom,
     VideoTrack,
@@ -20,7 +21,8 @@ import {
     useMediaDeviceSelect,
     StartAudio,
     useConnectionState,
-    useRoomContext
+    useRoomContext,
+    useDataChannel
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 
@@ -59,14 +61,38 @@ function ConnectionIndicator() {
 // Now supports Recruiter Takeover mode
 // ============================================
 const AIInterviewerPanel = ({ isRecruiterTakeover }: { isRecruiterTakeover: boolean }) => {
-    const remoteParticipants = useRemoteParticipants();
-    const tracks = useTracks([Track.Source.Camera], { onlySubscribed: true });
-
-    const agentVideoTrack = tracks.find(
-        (track) => track.participant.identity.toLowerCase().includes('agent') ||
-            track.participant.identity.toLowerCase().includes('ai')
+    // FIX: Listen for ALL video sources (Camera, ScreenShare, Unknown)
+    const tracks = useTracks(
+        [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Unknown],
+        { onlySubscribed: true }
     );
-    const hasAgent = remoteParticipants.length > 0;
+
+    // DEBUG: Log all tracks to console
+    useEffect(() => {
+        if (tracks.length > 0) {
+            console.log("[AEGIS DEBUG] Available Remote Tracks:", tracks.map(t => ({
+                participant: t.participant.identity,
+                source: t.source,
+                kind: t.publication.kind,
+                isLocal: t.participant.isLocal,
+                sid: t.publication.trackSid
+            })));
+        }
+    }, [tracks]);
+
+    // ROBUST TRACK SELECTION:
+    // 1. Filter out LOCAL tracks
+    // 2. Find ANY video track from a remote participant (source could be Camera or ScreenShare or Unknown)
+    const remoteTracks = tracks.filter(t => !t.participant.isLocal && t.publication.kind === 'video');
+
+    const agentVideoTrack = remoteTracks.find(
+        (track) => {
+            const id = track.participant.identity.toLowerCase();
+            return id.includes('simli') || id.includes('agent') || id.includes('ai') || id.includes('interviewer');
+        }
+    ) || remoteTracks[0];
+
+    const hasAgent = !!agentVideoTrack;
 
     // RECRUITER TAKEOVER MODE
     if (isRecruiterTakeover) {
@@ -161,7 +187,7 @@ const AIInterviewerPanel = ({ isRecruiterTakeover }: { isRecruiterTakeover: bool
                             {hasAgent ? "AI_INTERVIEWER" : "ESTABLISHING UPLINK"}
                         </p>
                         <p className="text-zinc-600 font-mono text-xs tracking-widest">
-                            {hasAgent ? ":: CONNECTED ::" : ":: SEARCHING FOR AGENT ::"}
+                            {hasAgent ? ":: CONNECTED ::" : `:: SEARCHING (Remote: ${remoteTracks.length}) ::`}
                         </p>
 
                         {!hasAgent && (
@@ -203,28 +229,169 @@ const AIInterviewerPanel = ({ isRecruiterTakeover }: { isRecruiterTakeover: bool
 };
 
 // ============================================
-// CODE TERMINAL (BOTTOM HALF OF LEFT ZONE)
+// LANGUAGE CONFIG FOR PISTON API
 // ============================================
-const CodeTerminal = ({ onCodeSubmit }: { onCodeSubmit: (code: string) => void }) => {
-    const [code, setCode] = useState("");
+const SUPPORTED_LANGUAGES = [
+    { id: 'python', name: 'Python', version: '3.10.0', monacoLang: 'python', icon: '🐍' },
+    { id: 'javascript', name: 'JavaScript', version: '18.15.0', monacoLang: 'javascript', icon: '🟨' },
+    { id: 'typescript', name: 'TypeScript', version: '5.0.3', monacoLang: 'typescript', icon: '🔷' },
+    { id: 'c++', name: 'C++', version: '10.2.0', monacoLang: 'cpp', icon: '⚡' },
+    { id: 'java', name: 'Java', version: '15.0.2', monacoLang: 'java', icon: '☕' },
+];
+
+const DEFAULT_CODE: Record<string, string> = {
+    python: `# Write your solution here
+# Press Ctrl+Enter or click RUN to execute
+
+def solution(input):
+    # Your code here
+    return "Hello World"
+
+print(solution("test"))`,
+    javascript: `// Write your solution here
+// Press Ctrl+Enter or click RUN to execute
+
+function solution(input) {
+    // Your code here
+    return "Hello World";
+}
+
+console.log(solution("test"));`,
+    typescript: `// Write your solution here
+// Press Ctrl+Enter or click RUN to execute
+
+function solution(input: string): string {
+    // Your code here
+    return "Hello World";
+}
+
+console.log(solution("test"));`,
+    'c++': `// Write your solution here
+// Press Ctrl+Enter or click RUN to execute
+#include <iostream>
+using namespace std;
+
+int main() {
+    // Your code here
+    cout << "Hello World" << endl;
+    return 0;
+}`,
+    java: `// Write your solution here
+// Press Ctrl+Enter or click RUN to execute
+public class Main {
+    public static void main(String[] args) {
+        // Your code here
+        System.out.println("Hello World");
+    }
+}`
+};
+
+// ============================================
+// MONACO IDE (REPLACES CODE TERMINAL)
+// ============================================
+const MonacoIDE = ({ onCodeSubmit }: { onCodeSubmit: (code: string, language: string, output: string) => void }) => {
+    const [selectedLang, setSelectedLang] = useState(SUPPORTED_LANGUAGES[0]);
+    const [code, setCode] = useState(DEFAULT_CODE['python']);
+    const [output, setOutput] = useState<string>('');
     const [isRunning, setIsRunning] = useState(false);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const [executionTime, setExecutionTime] = useState<string>('');
+    const [showLangDropdown, setShowLangDropdown] = useState(false);
 
-    const handleRun = () => {
-        if (!code.trim()) return;
+    // Listen for Auto-Code Events from Agent
+    useDataChannel((msg) => {
+        try {
+            const text = new TextDecoder().decode(msg.payload);
+            const data = JSON.parse(text);
+
+            // Check for Event Type
+            if (data.type === "CODE_SNAPSHOT") {
+                console.log("🚀 Received Auto-Code from Agent:", data.code);
+
+                // Update Editor Content
+                setCode(data.code);
+
+                // If language is provided, try to switch
+                if (data.language) {
+                    const langMatch = SUPPORTED_LANGUAGES.find(l =>
+                        l.id.toLowerCase() === data.language.toLowerCase() ||
+                        l.name.toLowerCase() === data.language.toLowerCase()
+                    );
+                    if (langMatch) setSelectedLang(langMatch);
+                }
+            }
+        } catch (e) {
+            console.error("Error parsing data message:", e);
+        }
+    });
+
+    // Execute code via Piston API
+    const executeCode = async () => {
+        if (!code.trim() || isRunning) return;
+
         setIsRunning(true);
-        onCodeSubmit(code);
-        setTimeout(() => setIsRunning(false), 500);
-    };
+        setOutput('');
+        setExecutionTime('');
+        const startTime = Date.now();
 
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            handleRun();
+        try {
+            console.log(`[AEGIS] Executing ${selectedLang.name} code via Piston API...`);
+
+            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    language: selectedLang.id,
+                    version: selectedLang.version,
+                    files: [{ content: code }]
+                })
+            });
+
+            const result = await response.json();
+            const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
+            setExecutionTime(`${elapsed}s`);
+
+            console.log('[AEGIS] Piston result:', result);
+
+            if (result.run) {
+                const stdout = result.run.stdout || '';
+                const stderr = result.run.stderr || '';
+                const exitCode = result.run.code;
+
+                if (stderr) {
+                    setOutput(`${stdout}\n⚠️ ERROR:\n${stderr}`);
+                } else if (exitCode !== 0) {
+                    setOutput(`${stdout}\n⚠️ Exit code: ${exitCode}`);
+                } else {
+                    setOutput(stdout || '(No output)');
+                }
+
+                // Send to AI agent
+                onCodeSubmit(code, selectedLang.name, stdout || stderr);
+            } else {
+                setOutput('⚠️ Execution failed. Please try again.');
+            }
+        } catch (error) {
+            console.error('[AEGIS] Piston API error:', error);
+            setOutput('⚠️ Failed to execute code. Check your connection.');
+        } finally {
+            setIsRunning(false);
         }
     };
 
-    const lines = code.split('\n');
-    const lineCount = Math.max(lines.length, 15);
+    // Handle language change
+    const handleLanguageChange = (lang: typeof SUPPORTED_LANGUAGES[0]) => {
+        setSelectedLang(lang);
+        setCode(DEFAULT_CODE[lang.id] || '');
+        setOutput('');
+        setShowLangDropdown(false);
+    };
+
+    // Keyboard shortcut
+    const handleEditorMount = (editor: any) => {
+        editor.addCommand(2048 + 3, () => { // Ctrl+Enter
+            executeCode();
+        });
+    };
 
     return (
         <div className="flex-1 bg-[#0a0a0f] flex flex-col min-h-0 border-t border-[#00E5FF]/20 relative">
@@ -232,19 +399,50 @@ const CodeTerminal = ({ onCodeSubmit }: { onCodeSubmit: (code: string) => void }
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-gradient-to-r from-[#00E5FF]/5 to-transparent">
                 <div className="flex items-center gap-3">
                     <div className="flex items-center gap-2">
-                        <TerminalIcon className="w-5 h-5 text-[#00E5FF]" />
-                        <span className="text-white font-mono text-sm tracking-widest font-bold">CODE_TERMINAL</span>
+                        <Code className="w-5 h-5 text-[#00E5FF]" />
+                        <span className="text-white font-mono text-sm tracking-widest font-bold">AEGIS_IDE</span>
                     </div>
-                    <div className="flex gap-1.5 ml-4">
+                    <div className="flex gap-1.5 ml-3">
                         <div className="w-3 h-3 rounded-full bg-red-500/80" />
                         <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
                         <div className="w-3 h-3 rounded-full bg-green-500/80" />
                     </div>
+
+                    {/* Language Selector */}
+                    <div className="relative ml-4">
+                        <button
+                            onClick={() => setShowLangDropdown(!showLangDropdown)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-black/50 border border-white/20 rounded text-sm font-mono text-zinc-300 hover:border-[#00E5FF]/50 transition-colors"
+                        >
+                            <span>{selectedLang.icon}</span>
+                            <span>{selectedLang.name}</span>
+                            <ChevronDown className="w-4 h-4 text-zinc-500" />
+                        </button>
+
+                        {showLangDropdown && (
+                            <div className="absolute top-full left-0 mt-1 bg-[#0a0a0f] border border-white/20 rounded shadow-xl z-50 min-w-[150px]">
+                                {SUPPORTED_LANGUAGES.map((lang) => (
+                                    <button
+                                        key={lang.id}
+                                        onClick={() => handleLanguageChange(lang)}
+                                        className={clsx(
+                                            "w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-mono hover:bg-white/10 transition-colors",
+                                            selectedLang.id === lang.id ? "bg-[#00E5FF]/10 text-[#00E5FF]" : "text-zinc-300"
+                                        )}
+                                    >
+                                        <span>{lang.icon}</span>
+                                        <span>{lang.name}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
+
                 <div className="flex items-center gap-3">
                     <span className="text-zinc-600 font-mono text-xs">Ctrl+Enter to run</span>
                     <button
-                        onClick={handleRun}
+                        onClick={executeCode}
                         disabled={isRunning}
                         className={clsx(
                             "flex items-center gap-2 px-5 py-2 border text-sm font-mono font-bold rounded transition-all",
@@ -256,44 +454,75 @@ const CodeTerminal = ({ onCodeSubmit }: { onCodeSubmit: (code: string) => void }
                         {isRunning ? (
                             <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                EXECUTING...
+                                RUNNING...
                             </>
                         ) : (
                             <>
                                 <Play className="w-4 h-4" />
-                                EXECUTE
+                                RUN
                             </>
                         )}
                     </button>
                 </div>
             </div>
 
-            {/* Editor */}
-            <div className="flex-1 flex overflow-hidden relative z-10">
-                <div className="w-14 bg-black/50 border-r border-white/5 py-4 flex flex-col items-end pr-3 overflow-hidden">
-                    {Array.from({ length: lineCount }, (_, i) => (
-                        <div key={i} className="text-zinc-700 font-mono text-sm leading-6 select-none">
-                            {i + 1}
-                        </div>
-                    ))}
-                </div>
-
-                <textarea
-                    ref={textareaRef}
+            {/* Monaco Editor */}
+            <div className="flex-1 min-h-0">
+                <Editor
+                    height="100%"
+                    language={selectedLang.monacoLang}
                     value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    className="flex-1 bg-transparent text-green-400 font-mono text-sm p-4 resize-none focus:outline-none leading-6 selection:bg-[#00E5FF]/30 placeholder:text-zinc-700"
-                    placeholder="// Write your solution here...
-// The AI interviewer will review your code in real-time.
-// Press Ctrl+Enter to submit.
-
-function solution(input) {
-    // Your code here
-    
-}"
-                    spellCheck={false}
+                    onChange={(value) => setCode(value || '')}
+                    onMount={handleEditorMount}
+                    theme="vs-dark"
+                    options={{
+                        fontSize: 14,
+                        fontFamily: "'Fira Code', 'Consolas', monospace",
+                        minimap: { enabled: false },
+                        scrollBeyondLastLine: false,
+                        lineNumbers: 'on',
+                        renderLineHighlight: 'line',
+                        cursorBlinking: 'smooth',
+                        automaticLayout: true,
+                        padding: { top: 16, bottom: 16 },
+                        wordWrap: 'on',
+                    }}
                 />
+            </div>
+
+            {/* Thick Separator */}
+            <div className="h-2 bg-gradient-to-r from-[#00E5FF]/30 via-[#00E5FF]/50 to-[#00E5FF]/30" />
+
+            {/* Output Panel */}
+            <div className="h-32 bg-black/80 border-t border-[#00E5FF]/30 flex flex-col">
+                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 bg-black/50">
+                    <div className="flex items-center gap-2">
+                        <TerminalIcon className="w-4 h-4 text-zinc-500" />
+                        <span className="text-zinc-400 font-mono text-xs tracking-wider">OUTPUT</span>
+                    </div>
+                    {executionTime && (
+                        <span className="text-zinc-600 font-mono text-xs">
+                            ⏱ {executionTime}
+                        </span>
+                    )}
+                </div>
+                <div className="flex-1 overflow-auto p-3 font-mono text-sm">
+                    {isRunning ? (
+                        <div className="flex items-center gap-2 text-yellow-400">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Executing code...</span>
+                        </div>
+                    ) : output ? (
+                        <pre className={clsx(
+                            "whitespace-pre-wrap",
+                            output.includes('⚠️') ? "text-red-400" : "text-green-400"
+                        )}>
+                            {output}
+                        </pre>
+                    ) : (
+                        <span className="text-zinc-600">// Run your code to see output here</span>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -371,6 +600,17 @@ const TranscriptLog = ({ messages }: { messages: Message[] }) => {
 // TELEMETRY PANEL (25% RIGHT)
 // Now includes Recruiter Takeover button
 // ============================================
+// Helper for cleanliness
+const RecruiterTakeoverControl = ({ onConfirm }: { onConfirm: () => void }) => (
+    <button
+        onClick={onConfirm}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500/10 to-amber-600/5 border border-amber-500/30 rounded-lg text-amber-400 font-mono text-xs font-bold hover:from-amber-500/20 hover:to-amber-600/10 hover:border-amber-500/50 transition-all group"
+    >
+        <Crown className="w-4 h-4 group-hover:scale-110 transition-transform" />
+        RECRUITER TAKEOVER
+    </button>
+);
+
 const TelemetryPanel = ({
     onEndCall,
     activePanel,
@@ -379,13 +619,18 @@ const TelemetryPanel = ({
     onRecruiterTakeover
 }: {
     onEndCall: () => void;
-    activePanel: ActivePanel;
-    setActivePanel: (panel: ActivePanel) => void;
+    activePanel: string | null;
+    setActivePanel: (p: ActivePanel) => void;
     isRecruiterTakeover: boolean;
     onRecruiterTakeover: () => void;
 }) => {
     const [hardwareExpanded, setHardwareExpanded] = useState(true);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+    const handleConfirmTakeover = () => {
+        setShowConfirmModal(false);
+        onRecruiterTakeover();
+    };
     const audioDevices = useMediaDeviceSelect({ kind: 'audioinput' });
     const videoDevices = useMediaDeviceSelect({ kind: 'videoinput' });
     const { localParticipant } = useLocalParticipant();
@@ -399,11 +644,6 @@ const TelemetryPanel = ({
         } else {
             setActivePanel(panel);
         }
-    };
-
-    const handleConfirmTakeover = () => {
-        setShowConfirmModal(false);
-        onRecruiterTakeover();
     };
 
     return (
@@ -512,122 +752,66 @@ const TelemetryPanel = ({
                             <p className="text-zinc-600 font-mono text-[10px] mt-2">AI interviewer paused</p>
                         </div>
                     ) : (
-                        <button
-                            onClick={() => setShowConfirmModal(true)}
-                            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-amber-500/10 to-amber-600/5 border border-amber-500/30 rounded-lg text-amber-400 font-mono text-xs font-bold hover:from-amber-500/20 hover:to-amber-600/10 hover:border-amber-500/50 transition-all group"
-                        >
-                            <Crown className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                            RECRUITER TAKEOVER
-                        </button>
-                    )}
-                </div>
-
-                {/* System Stats */}
-                <div className="p-4 border border-white/10 bg-black/40 rounded space-y-3">
-                    <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
-                        <Cpu className="w-3 h-3" />
-                        System Status
-                    </div>
-                    <div className="space-y-2">
-                        <div className="flex justify-between items-center text-sm font-mono">
-                            <span className="text-zinc-500">ENCRYPTION</span>
-                            <span className="text-[#00E5FF] flex items-center gap-1">
-                                <Shield className="w-3 h-3" /> AES-256-GCM
-                            </span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm font-mono">
-                            <span className="text-zinc-500">LATENCY</span>
-                            <span className="text-green-400">~24ms</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm font-mono">
-                            <span className="text-zinc-500">SIGNAL</span>
-                            <span className="text-green-400">EXCELLENT</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Hardware Override */}
-                <div className="border border-white/10 bg-black/40 rounded overflow-hidden">
-                    <button
-                        onClick={() => setHardwareExpanded(!hardwareExpanded)}
-                        className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-colors"
-                    >
-                        <div className="flex items-center gap-2">
-                            <Settings className="w-4 h-4 text-[#00E5FF]" />
-                            <span className="text-white font-mono text-xs font-bold tracking-wider">HARDWARE_OVERRIDE</span>
-                        </div>
-                        {hardwareExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
-                    </button>
-
-                    {hardwareExpanded && (
-                        <div className="p-4 space-y-4 border-t border-white/5">
-                            {/* Audio */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
-                                    <Volume2 className="w-3 h-3" /> Audio Input
-                                </label>
-                                <select
-                                    className="w-full bg-black border border-zinc-800 text-zinc-300 text-xs p-2.5 font-mono focus:border-[#00E5FF] outline-none rounded"
-                                    onChange={(e) => audioDevices.setActiveMediaDevice(e.target.value)}
-                                    value={audioDevices.activeDeviceId}
-                                >
-                                    {audioDevices.devices.map((d) => (
-                                        <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Device'}</option>
-                                    ))}
-                                </select>
-
-                                {/* Waveform */}
-                                <div className="h-10 bg-black/60 border border-white/10 flex items-end justify-between px-1 pb-1 gap-[2px] rounded">
-                                    {[...Array(24)].map((_, i) => (
-                                        <div key={i}
-                                            className="flex-1 bg-[#00E5FF]"
-                                            style={{
-                                                height: `${Math.random() * 80 + 20}%`,
-                                                opacity: Math.random() * 0.5 + 0.3,
-                                                animation: `pulse ${Math.random() * 0.5 + 0.3}s infinite`
-                                            }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Video */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
-                                    <Camera className="w-3 h-3" /> Video Input
-                                </label>
-                                <select
-                                    className="w-full bg-black border border-zinc-800 text-zinc-300 text-xs p-2.5 font-mono focus:border-[#00E5FF] outline-none rounded"
-                                    onChange={(e) => videoDevices.setActiveMediaDevice(e.target.value)}
-                                    value={videoDevices.activeDeviceId}
-                                >
-                                    {videoDevices.devices.map((d) => (
-                                        <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Device'}</option>
-                                    ))}
-                                </select>
-
-                                {/* Preview */}
-                                <div className="aspect-video bg-black border border-white/10 relative overflow-hidden rounded">
-                                    {localVideoTrack ? (
-                                        <VideoTrack trackRef={localVideoTrack} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-900 to-black">
-                                            <VideoOff className="w-8 h-8 text-zinc-700" />
-                                        </div>
-                                    )}
-                                    <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-1 text-[10px] font-mono text-[#00E5FF] border border-[#00E5FF]/30 rounded flex items-center gap-1">
-                                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                                        LIVE
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                        <RecruiterTakeoverControl onConfirm={() => setShowConfirmModal(true)} />
                     )}
                 </div>
             </div>
 
+            {/* System Stats */}
+            <div className="p-4 border border-white/10 bg-black/40 rounded space-y-3">
+                <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
+                    <Cpu className="w-3 h-3" />
+                    System Status
+                </div>
+                <div className="space-y-2">
+                    <div className="flex justify-between items-center text-sm font-mono">
+                        <span className="text-zinc-500">ENCRYPTION</span>
+                        <span className="text-[#00E5FF] flex items-center gap-1">
+                            <Shield className="w-3 h-3" /> AES-256-GCM
+                        </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm font-mono">
+                        <span className="text-zinc-500">LATENCY</span>
+                        <span className="text-green-400">~24ms</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Hardware Override */}
+            <div className="border border-white/10 bg-black/40 rounded overflow-hidden flex-1 min-h-0">
+                <button
+                    onClick={() => setHardwareExpanded(!hardwareExpanded)}
+                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-colors"
+                >
+                    <div className="flex items-center gap-2">
+                        <Settings className="w-4 h-4 text-[#00E5FF]" />
+                        <span className="text-white font-mono text-xs font-bold tracking-wider">HARDWARE_OVERRIDE</span>
+                    </div>
+                    {hardwareExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+                </button>
+                {hardwareExpanded && (
+                    <div className="p-4 space-y-4 border-t border-white/5 overflow-y-auto max-h-[200px]">
+                        {/* Audio */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
+                                <Volume2 className="w-3 h-3" /> Audio Input
+                            </label>
+                            <select
+                                className="w-full bg-black border border-zinc-800 text-zinc-300 text-xs p-2.5 font-mono focus:border-[#00E5FF] outline-none rounded"
+                                onChange={(e) => audioDevices.setActiveMediaDevice(e.target.value)}
+                                value={audioDevices.activeDeviceId}
+                            >
+                                {audioDevices.devices.map((d) => (
+                                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Device'}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             {/* End Call */}
-            <div className="p-4 border-t border-white/10 bg-black/80">
+            <div className="p-4 border-t border-white/10 bg-black/80 mt-auto">
                 <button
                     onClick={onEndCall}
                     className="w-full group relative px-6 py-3 bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white transition-all rounded flex items-center justify-center gap-3 overflow-hidden"
@@ -692,10 +876,21 @@ const EmptyPanel = () => {
 // ============================================
 // CONTENT WRAPPER (Inside Room)
 // ============================================
-const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: () => void; candidateId: string; onInterviewEnd: () => void }) => {
+const RoomContent = ({
+    onEndCall,
+    candidateId,
+    onInterviewEnd,
+    startTakeover = false
+}: {
+    onEndCall: () => void;
+    candidateId: string;
+    onInterviewEnd: () => void;
+    startTakeover?: boolean;
+}) => {
     const [messages, setMessages] = useState<Message[]>([
         { id: "1", timestamp: new Date().toLocaleTimeString(), sender: "SYSTEM", text: "Neural link established. Waiting for AI interviewer..." }
     ]);
+    const [hasSyncedHistory, setHasSyncedHistory] = useState(false); // Track if we got history
     const [msgInput, setMsgInput] = useState("");
     const [activePanel, setActivePanel] = useState<ActivePanel>(null);
     const [isRecruiterTakeover, setIsRecruiterTakeover] = useState(false);
@@ -711,10 +906,11 @@ const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: ()
         const handleData = (payload: Uint8Array, participant?: any, kind?: any, topic?: string) => {
             try {
                 const text = new TextDecoder().decode(payload);
+                console.log("[RAW DATA]", text); // Debug Log
                 const data = JSON.parse(text);
 
-                // SIMPLIFIED: Just check the type. Ignore topic for maximum compatibility.
-                if (data.type === "TRANSCRIPT") {
+                // SIMPLIFIED: Just check the type.
+                if (data.type === "TRANSCRIPT" || data.type === "transcription") {
                     console.log("[TRANSCRIPT RX]", data.sender, data.text);
                     setMessages(prev => [...prev, {
                         id: Date.now().toString(),
@@ -738,14 +934,54 @@ const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: ()
                         onInterviewEnd();
                     }, 2000);
                 }
+                // HISTORY SYNC (P2P)
+                if (data.type === "REQUEST_HISTORY") {
+                    // If I have messages (more than just system init), share them
+                    if (messages.length > 1) {
+                        console.log("[AEGIS] Received History Request. Sending sync...", messages.length);
+                        const syncPayload = JSON.stringify({
+                            type: "HISTORY_SYNC",
+                            history: messages
+                        });
+                        const encoder = new TextEncoder();
+                        // Send to the specific requester? publishData goes to all. Ideally use `destinationIdentities` but broadcast is fine for now.
+                        room.localParticipant.publishData(encoder.encode(syncPayload), { reliable: true });
+                    }
+                }
+
+                if (data.type === "HISTORY_SYNC") {
+                    if (!hasSyncedHistory && data.history && Array.isArray(data.history)) {
+                        console.log("[AEGIS] Received History Sync:", data.history.length, "messages");
+                        // Merge unique messages or just replace? Replace is safer for a full sync.
+                        // But keep our local system init if needed. Let's trust the sync.
+                        setMessages(data.history);
+                        setHasSyncedHistory(true);
+                    }
+                }
+
             } catch (e) {
                 console.warn("Packet Decode Failed:", e);
             }
         };
 
         room.on('dataReceived', handleData);
-        return () => { room.off('dataReceived', handleData); };
-    }, [room]);
+
+        // On Mount: Request History (if we are new)
+        // Give a small delay to ensure connection
+        const timer = setTimeout(async () => {
+            if (room.state === 'connected' && messages.length <= 1) {
+                console.log("[AEGIS] Requesting Chat History...");
+                const payload = JSON.stringify({ type: "REQUEST_HISTORY" });
+                const encoder = new TextEncoder();
+                await room.localParticipant.publishData(encoder.encode(payload), { reliable: true });
+            }
+        }, 2000);
+
+        return () => {
+            room.off('dataReceived', handleData);
+            clearTimeout(timer);
+        };
+    }, [room, messages, hasSyncedHistory]);
 
     const handleSendMessage = (e: React.FormEvent) => {
         e.preventDefault();
@@ -759,24 +995,30 @@ const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: ()
         setMsgInput("");
     };
 
-    const handleCodeSubmit = async (code: string) => {
+    const handleCodeSubmit = async (code: string, language?: string, output?: string) => {
         // 1. Update Local Log
         setMessages(prev => [...prev, {
             id: Date.now().toString(),
             timestamp: getTimestamp(),
             sender: "CODE",
-            text: code
+            text: `[${language || 'CODE'}]\n${code}${output ? `\n\n→ Output: ${output}` : ''}`
         }]);
 
         // 2. Transmit to Agent
         if (room && room.localParticipant) {
-            const payload = JSON.stringify({ type: "ALGO_SUBMIT", code: code });
+            const payload = JSON.stringify({
+                type: "ALGO_SUBMIT",
+                code: code,
+                language: language || 'unknown',
+                output: output || ''
+            });
             const encoder = new TextEncoder();
             await room.localParticipant.publishData(encoder.encode(payload), { reliable: true });
+            console.log('[AEGIS] Code submitted to AI agent:', { language, codeLength: code.length });
         }
     };
 
-    const handleRecruiterTakeover = () => {
+    const handleRecruiterTakeover = async () => {
         setIsRecruiterTakeover(true);
         // Add system message about takeover
         setMessages(prev => [...prev, {
@@ -786,13 +1028,26 @@ const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: ()
             text: "⚠️ RECRUITER TAKEOVER: Human interviewer has taken control. AI is now paused."
         }]);
 
-        // TODO: Send signal to Utkarsh's backend to pause AI
-        // if (room && room.localParticipant) {
-        //     const payload = JSON.stringify({ type: "RECRUITER_TAKEOVER" });
-        //     const encoder = new TextEncoder();
-        //     await room.localParticipant.publishData(encoder.encode(payload), { reliable: true });
-        // }
+        // Send signal to Utkarsh's backend/Room to pause AI
+        if (room && room.localParticipant) {
+            const payload = JSON.stringify({ type: "HUMAN_TAKEOVER" });
+            const encoder = new TextEncoder();
+            await room.localParticipant.publishData(encoder.encode(payload), { reliable: true });
+
+            // Also enable media if not already? (Recruiter is joining with media published usually)
+            // But let's force it just in case
+            await room.localParticipant.setCameraEnabled(true);
+            await room.localParticipant.setMicrophoneEnabled(true);
+        }
     };
+
+    // Auto-Takeover (from Monitor Page)
+    useEffect(() => {
+        if (startTakeover && room && room.state === 'connected' && !isRecruiterTakeover) {
+            console.log("[AEGIS] Auto-initiating Recruiter Takeover...");
+            handleRecruiterTakeover();
+        }
+    }, [room, room?.state, startTakeover, isRecruiterTakeover, handleRecruiterTakeover]);
 
     return (
         <div className="grid grid-cols-12 h-screen bg-[#050508] text-zinc-400 overflow-hidden font-sans relative">
@@ -811,7 +1066,7 @@ const RoomContent = ({ onEndCall, candidateId, onInterviewEnd }: { onEndCall: ()
                     <AIInterviewerPanel isRecruiterTakeover={isRecruiterTakeover} />
                 </div>
                 <div className="flex-1 flex flex-col min-h-0">
-                    {activePanel === "terminal" && <CodeTerminal onCodeSubmit={handleCodeSubmit} />}
+                    {activePanel === "terminal" && <MonacoIDE onCodeSubmit={handleCodeSubmit} />}
                     {activePanel === "notepad" && <Notepad />}
                     {activePanel === null && <EmptyPanel />}
                 </div>
@@ -881,12 +1136,14 @@ export default function InterviewRoomPage() {
             });
 
             if (!response.ok) {
-                if (response.status === 404) {
-                    alert('Report not found. The interview may still be processing. Please try again in a few seconds.');
+                const errorText = await response.text();
+                // Check if it's the specific "Not Ready" error
+                if (response.status === 404 || errorText.includes("not ready")) {
+                    alert('Report is generating (Neural Nets Processing...). Please wait 10-20 seconds and click again.');
                     setIsDownloading(false);
                     return;
                 }
-                throw new Error(`Failed to download report: ${response.status}`);
+                throw new Error(`Failed to download: ${response.status} - ${errorText}`);
             }
 
             // Get the blob and trigger download
@@ -924,9 +1181,16 @@ export default function InterviewRoomPage() {
     useEffect(() => {
         const fetchToken = async () => {
             try {
-                // Using Utkarsh's approach: unique room per session
-                const uniqueRoom = `aegis-${Date.now()}`;
-                const resp = await fetch(`/api/livekit/token?room=${uniqueRoom}&username=candidate`);
+                // Use 'room' param from URL, or fallback to timestamp
+                // But if 'role=recruiter', we MUST use specific identity
+                const roomParam = searchParams.get('room');
+                const roleParam = searchParams.get('role');
+                const uniqueRoom = roomParam || `aegis-${Date.now()}`;
+                const username = roleParam === 'recruiter' ? `recruiter-${Date.now()}` : 'candidate';
+
+                console.log("[AEGIS] Joining Room:", uniqueRoom, "as", username);
+
+                const resp = await fetch(`/api/livekit/token?room=${uniqueRoom}&username=${username}`);
                 const data = await resp.json();
                 setToken(data.token);
             } catch (e) {
@@ -934,7 +1198,22 @@ export default function InterviewRoomPage() {
             }
         };
         fetchToken();
-    }, []);
+    }, [searchParams]);
+
+    const handleEndCall = async () => {
+        setIsSessionEnded(true);
+        // Notify backend to stop recording/processing and generate report
+        try {
+            console.log("[AEGIS] Sending Stop Signal to Backend...");
+            await fetch(`${API_BASE}/stop-interview`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ candidate_id: candidateId })
+            });
+        } catch (e) {
+            console.error("Failed to stop interview backend:", e);
+        }
+    };
 
     if (isSessionEnded) {
         return (
@@ -1122,7 +1401,7 @@ export default function InterviewRoomPage() {
     return (
         <LiveKitRoom
             video={true}
-            audio={true}
+            audio={false} // Disabled to prevent echo (RoomAudioRenderer handles it)
             token={token}
             serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL}
             connect={true}
