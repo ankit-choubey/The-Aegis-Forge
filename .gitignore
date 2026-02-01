@@ -169,7 +169,7 @@ node_modules
 
 credentials.json
 pyrightconfig.json
-docs/
+# docs/ (Removed from ignore to track system guides)
 
 # Database files
 *.db

@@ -163,7 +163,10 @@ class CrisisPopupAgent:
                              "code": code_content
                          }).encode("utf-8")
                          await self._room.local_participant.publish_data(code_payload, reliable=True)
-                         logger.info(">>> Sent CODE_SNAPSHOT to IDE")
+                         logger.info(f">>> Sent CODE_SNAPSHOT to IDE ({len(code_content)} chars)")
+                         
+                         # [NEW] Also update the UserState in the backend ensuring the agent knows the user is looking at this code
+                         # This is implicit via the context but good to note.
                 except Exception as e:
                     logger.error(f"Failed to push crisis code to IDE: {e}")
             
@@ -205,7 +208,7 @@ class CrisisPopupAgent:
                              # Should be "ALERT: Description \n"
                              spoken_text = parts[0].replace("ALERT:", "").strip()
                      
-                     final_speech = f"Hold on. I need to interrupt. {spoken_text}. I've sent the code to your screen. Write the fix in the IDE now."
+                     final_speech = f"Hold on. I need to interrupt. {spoken_text}. I've sent the broken code to your editor. Fix it immediately!"
                      
                      asyncio.create_task(self._session.say(final_speech, allow_interruptions=False))
                      logger.info(f">>> [CRISIS] Spoken: {final_speech}")

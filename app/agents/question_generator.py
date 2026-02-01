@@ -35,36 +35,36 @@ def build_question_generation_prompt(candidate_context: Dict[str, Any]) -> str:
     else:
         project_q_instruction = "- 1 general question about their most challenging recent project (do NOT name a project)"
 
-    prompt = f"""You are a senior technical interviewer. Generate 5 unique interview questions for a {field} candidate.
-
-CANDIDATE PROFILE:
-- Name: {name}
-- Field: {field}
-- Verified Skills (from GitHub): {', '.join(verified_skills[:5]) if verified_skills else 'None'}
-- Claimed Skills (from Resume): {', '.join(all_skills[:8]) if all_skills else 'None'}
-- GitHub Repos: {', '.join(github_repos[:5]) if github_repos else 'None'}
-- Project Highlights: {'; '.join([p[:80] for p in projects[:3]]) if projects else 'None'}
-
-REQUIREMENTS:
-1. Generate exactly 5 questions in this order:
-   - 1 question about a SPECIFIC skill (MUST include a small code snippet to analyze)
-   - 1 question about a SPECIFIC project or repo (verify ownership)
-   - 1 scenario-based question for their domain (MUST include a snippet of broken code)
-   - 1 system design / architecture question
-   - 1 behavioral / problem-solving question
-
-2. Questions should be SPECIFIC to THIS candidate.
-3. For Skill/Scenario questions, provide a code block for them to debug/explain.
-4. QUESTIONS MUST BE CONCISE (Approx 25 words). NO LONG CONTEXT.
-
-CRITICAL:
-- Do NOT hallucinate project names. Only use project names EXPLICITLY listed in "Project Highlights" or "GitHub Repos".
-- If no projects are listed, ask generally about "a complex project you worked on".
-
-OUTPUT FORMAT:
-Return ONLY the 5 questions, one per line.
-MANDATORY: Wrap any code in ```python ... ``` blocks.
-"""
+    prompt = f"""You are a senior technical interviewer. Generate 5 unique technical interview questions for a {field} candidate.
+    
+    CANDIDATE PROFILE:
+    - Name: {name}
+    - Field: {field}
+    - Verified Skills (from GitHub): {', '.join(verified_skills[:5]) if verified_skills else 'None'}
+    - Claimed Skills (from Resume): {', '.join(all_skills[:8]) if all_skills else 'None'}
+    - GitHub Repos: {', '.join(github_repos[:5]) if github_repos else 'None'}
+    - Project Highlights: {'; '.join([p[:80] for p in projects[:3]]) if projects else 'None'}
+    
+    REQUIREMENTS:
+    1. Generate exactly 5 questions in this order:
+       - 1 DEBUGGING: Present a snippet of BROKEN code related to {field} and ask them to fix it.
+       - 1 OPTIMIZATION: Present a suboptimal snippet and ask for Big O improvement.
+       - 1 IMPLEMENTATION: Ask them to write a function for a specific algorithm or feature.
+       - 1 REFACTORING: Give a "smelly" code block and ask how they would clean it up.
+       - 1 PROBLEM SOLVING: A technical design or behavioral question (keep it short).
+    
+    2. Questions MUST be specific to THIS candidate's skills.
+    3. FOR ALL CODE QUESTIONS: ALWAYS provide the starter code block in ```python (or relevant language) ... ```.
+    4. QUESTIONS MUST BE CONCISE (Max 30 words).
+    
+    CRITICAL:
+    - 85% of your output MUST be CODE SNIPPETS.
+    - Do NOT ask high-level "how would you handle X" questions without code.
+    - Enforce the candidate to use the IDE.
+    
+    OUTPUT FORMAT:
+    Return ONLY the 5 questions, one per line.
+    """
     return prompt
 
 
@@ -137,13 +137,13 @@ async def generate_dynamic_questions(
 
 
 def _get_fallback_questions() -> List[str]:
-    """Default questions if generation fails."""
+    """Default questions if generation fails (Strictly Code-Centric)."""
     return [
-        "Can you walk me through a challenging project you've worked on recently?",
-        "How do you approach debugging a complex issue in production?",
-        "Tell me about a time you had to learn a new technology quickly.",
-        "How do you ensure code quality in your projects?",
-        "What's your approach to system design for a scalable application?"
+        "I have a piece of code here that's running at O(N^2) complexity. How would you optimize this to O(N log N)? ```python\ndef find_duplicates(items):\n    dups = []\n    for i in range(len(items)):\n        for j in range(i + 1, len(items)):\n            if items[i] == items[j]: dups.append(items[i])\n    return dups\n```",
+        "There's a bug in this function where it occasionally returns the wrong result for empty inputs. Can you find it? ```python\ndef get_first_even(nums):\n    return [x for x in nums if x % 2 == 0][0]\n```",
+        "How would you refactor this messy function to be more readable? ```python\ndef check(u, p):\n    if u != None:\n        if p != None:\n            if len(p) > 8:\n                return True\n    return False\n```",
+        "Write a quick function to merge two sorted arrays efficiently in Python.",
+        "How would you handle a race condition in a multi-threaded Python environment? Provide a code example."
     ]
 
 

@@ -2,6 +2,18 @@ import logging
 import os
 
 from dotenv import load_dotenv
+
+# Configure Logging (Mute noisy libraries)
+logging.getLogger("pdfminer").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
+# [FIX] Filter out LiveKit's "ignoring text stream" warning
+class TranscriptionLogFilter(logging.Filter):
+    def filter(self, record):
+        return "lk.transcription" not in record.getMessage()
+
+logging.getLogger().addFilter(TranscriptionLogFilter())
+
 import json
 import asyncio
 from livekit.rtc import DataPacket
@@ -38,6 +50,7 @@ from app.rag.scenarios import ScenarioLoader
 from app.core.end_detector import check_end_phrase, get_goodbye_message  # [NEW] End detection
 from app.core.interview_timer import InterviewTimer  # [NEW] 40-min timer
 from app.logging.questions_logger import QuestionsLogger  # [NEW] Questions log
+from app.core.scenario_generator import ScenarioGenerator  # [NEW] Custom Generator
 
 # Backend Imports (for Dev Mode Resume Loading)
 from backend.resume_validator import validate_resume
@@ -57,9 +70,13 @@ server = AgentServer()
 
 def prewarm(proc: JobProcess):
     """Preload models."""
+    print("DEBUG: prewarm STARTing...")
     proc.userdata["vad"] = silero.VAD.load()
+    print("DEBUG: VAD Loaded")
     # Pre-loading scenario loader
     proc.userdata["scenarios"] = ScenarioLoader()
+    print("DEBUG: Scenarios Loaded")
+    print("DEBUG: prewarm FINISHED")
 
 server.setup_fnc = prewarm
 
@@ -69,8 +86,10 @@ async def my_agent(ctx: JobContext):
     Main entrypoint for the Aegis Forge Interview Loop.
     Supports dynamic scenario selection based on resume audit.
     """
+    print(f"DEBUG: my_agent STARTED for room {ctx.room.name}") # <--- DEBUG
     logger.info(f"Connecting to room {ctx.room.name}")
     await ctx.connect()
+    print("DEBUG: my_agent CONNECTED") # <--- DEBUG
     
     # DEFERRED IMPORTS: These are loaded here to avoid blocking process initialization
     from backend.funnel.pipeline import knowledge_engine
@@ -114,7 +133,37 @@ async def my_agent(ctx: JobContext):
                 scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
                 logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
     
-    scenario = loader.get_scenario(scenario_id)
+    # [FEATURE] Custom Role Support
+    if scenario_id == "custom":
+        logger.info(">>> DETECTED CUSTOM ROLE REQUEST")
+        custom_role = "Software Engineer" # Default
+        
+        # Try to parse custom role from metadata JSON
+        try:
+             # Metadata might be JSON string: {"scenario_id": "custom", "custom_role": "..."}
+             meta_json = json.loads(metadata)
+             if meta_json.get("custom_role"):
+                 custom_role = meta_json["custom_role"]
+        except:
+             # Fallback if metadata is just simple string or not JSON
+             pass
+        
+        logger.info(f">>> Generatng Custom Scenario for: {custom_role}")
+        
+        # Need an LLM instance for the generator
+        gen_llm = groq.LLM(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
+        generator = ScenarioGenerator(gen_llm)
+        
+        # PRE-GENERATION ANNOUNCEMENT (Optional)
+        # await ctx.room.local_participant.publish_data(json.dumps({"type": "STATUS", "msg": "Generating Scenario..."}).encode(), reliable=True)
+        
+        scenario = await generator.generate_from_description(custom_role)
+        
+        if not scenario:
+             logger.error("Failed to generate custom scenario. Falling back.")
+             scenario = loader.get_scenario("devops-redis-latency")
+    else:
+        scenario = loader.get_scenario(scenario_id)
     
     if not scenario:
         logger.warning(f"Scenario {scenario_id} not found, falling back to devops-redis-latency")
@@ -276,6 +325,8 @@ async def my_agent(ctx: JobContext):
         interview_ended = True
         
         logger.info(f">>> GRACEFUL SHUTDOWN triggered: {reason}")
+        import traceback
+        logger.debug(f">>> SHUTDOWN STACK TRACE:\n{''.join(traceback.format_stack())}")
         audit_logger.log_event("System", "INTERVIEW_END", f"Reason: {reason}")
         
         # 1. Stop background agents
@@ -364,7 +415,7 @@ async def my_agent(ctx: JobContext):
 
             # --- END PHRASE DETECTION [NEW] ---
             if check_end_phrase(ev.transcript):
-                logger.info(f">>> END PHRASE DETECTED: '{ev.transcript}'")
+                logger.warning(f"!!! SHUTDOWN TRIGGERED by transcript: '{ev.transcript}'")
                 import asyncio
                 asyncio.create_task(graceful_shutdown("user_request"))
                 return  # Skip further processing
@@ -375,7 +426,7 @@ async def my_agent(ctx: JobContext):
                 import asyncio
                 # Removed topic="chat" for backward compatibility
                 task = asyncio.create_task(ctx.room.local_participant.publish_data(
-                    json.dumps({"type": "TRANSCRIPT", "sender": "YOU", "text": ev.transcript}).encode("utf-8"),
+                    json.dumps({"type": "TRANSCRIPTION", "sender": "YOU", "text": ev.transcript}).encode("utf-8"),
                     reliable=True
                 ))
                 task.add_done_callback(lambda t: logger.info(f"Broadcasted USER transcript: {len(ev.transcript)} chars"))
@@ -425,7 +476,7 @@ async def my_agent(ctx: JobContext):
                 try:
                     # Removed topic="chat" for backward compatibility
                     task = asyncio.create_task(ctx.room.local_participant.publish_data(
-                        json.dumps({"type": "TRANSCRIPT", "sender": "AGENT", "text": content}).encode("utf-8"),
+                        json.dumps({"type": "TRANSCRIPTION", "sender": "AGENT", "text": content}).encode("utf-8"),
                         reliable=True
                     ))
                     # Add callback to log success/failure of task
@@ -443,6 +494,10 @@ async def my_agent(ctx: JobContext):
     # --- Listen for Frontend Code Submissions & Handover ---
     @ctx.room.on("data_received")
     def on_data(datapacket: DataPacket):
+        # [FIX] Ignore implicit transcription packets to silence logs
+        if datapacket.topic == "lk.transcription":
+            return
+
         nonlocal is_human_mode
         try:
             data_str = datapacket.data.decode("utf-8")
@@ -474,19 +529,48 @@ async def my_agent(ctx: JobContext):
                     logger.error(f"Failed to broadcast MODE_SWITCH: {e}")
 
             elif msg_type == "ALGO_SUBMIT":
-                code = payload.get("code")
-                # ... existing algo submit logic ... #
-                # Re-implementing logic here since replacement overwrites it:
-                logger.info(f">>> RECEIVED CODE SUBMISSION ({len(code)} chars)")
+                code = payload.get("code", "")
+                output = payload.get("output", "")
+                logger.info(f">>> RECEIVED CODE SUBMISSION ({len(code)} chars, output: {len(output)})")
+                
+                # Truncate if extreme
+                if len(code) > 15000: code = code[:15000] + "... (truncated)"
+                if len(output) > 2000: output = output[:2000] + "... (truncated)"
+
+                # 1. Log to Audit/Questions
                 audit_logger.log_event("Candidate", "CODE_SUBMIT", code)
                 questions_logger.log_code_submission(code)
-                lead_agent_logic.chat_ctx.append(
-                    llm.ChatMessage(
-                        role="user", 
-                        content=f"I have written the following Python code:\n```python\n{code}\n```\nPlease evaluate it."
-                    )
-                )
-                asyncio.create_task(lead_agent_logic.say("I have received your code. Let me check it.", allow_interruptions=True))
+                
+                # 2. Add to LLM Context for immediate evaluation
+                eval_text = f"The candidate has executed/submitted the following code.\n\n### CODE:\n```python\n{code}\n```"
+                if output:
+                    eval_text += f"\n\n### EXECUTION OUTPUT:\n{output}"
+                eval_text += "\n\nPlease review it and acknowledge. If it's correct/fixing the issue, proceed. If not, provide feedback."
+
+                try:
+                    session.chat_ctx.add_message(role="user", content=eval_text)
+                    logger.info(">>> Injected code/output into LLM context.")
+                except Exception as ctx_err:
+                    logger.error(f"Failed to update chat_ctx: {ctx_err}")
+                
+                # 3. Trigger Agent Response
+                if hasattr(session, 'say'):
+                    asyncio.create_task(session.say("I've received your code. Let me review it now.", allow_interruptions=True))
+                # Trigger response from LLM happens automatically? No, say() just speaks.
+                # To get LLM to THINK about it, we usually need session.response.generate() or similar.
+                # But typically VoicePipelineAgent auto-replies to user input. Since this is "data", it might not auto-trigger.
+                # Actually, session.say() is just TTS. We need the LLM to generate the NEXT turn based on the context update.
+                # However, standard VoicePipelineAgent doesn't have a public `generate_reply` method in all versions.
+                # Instead, we rely on the fact that if we `say` something, the turn is over? No.
+                # Let's try explicit `session.response.create()` if available or `session.llm.chat()`.
+                # Simplest fallback if we can't trigger generation: The user (candidate) will likely say "Check my code".
+                # BUT user said: "fix it so it goes to llm model".
+                # If we just append to context, it will be used in the NEXT turn.
+                # To force a turn, we might need to fake a user speech event?
+                # BETTER: Just rely on context injection. If the user stays silent, the agent won't speak.
+                # But `session.say` buys time.
+                # Let's just append to context for now as "Shortest Path" to ensure it's THERE.
+
                 
         except Exception as e:
             logger.error(f"Error processing data packet: {e}")

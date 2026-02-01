@@ -481,8 +481,8 @@ const RoomContent = ({ onEndCall }: { onEndCall: () => void }) => {
                 const text = new TextDecoder().decode(payload);
                 const data = JSON.parse(text);
 
-                // SIMPLIFIED: Just check the type. Ignore topic for maximum compatibility.
-                if (data.type === "TRANSCRIPT") {
+                // SIMPLIFIED: Check for both legacy "TRANSCRIPT" and new "TRANSCRIPTION" types
+                if (data.type === "TRANSCRIPT" || data.type === "TRANSCRIPTION") {
                     console.log("[TRANSCRIPT RX]", data.sender, data.text);
                     setMessages(prev => [...prev, {
                         id: Date.now().toString(),

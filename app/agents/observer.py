@@ -77,28 +77,31 @@ class ObserverAgent(AegisAgentBase):
              # Post-process the JSON
              clean_content = full_response.strip()
              
-             # Basic Markdown cleanup
-             if "```json" in clean_content:
-                 clean_content = clean_content.split("```json")[1].split("```")[0].strip()
-             elif "```" in clean_content:
-                 clean_content = clean_content.split("```")[1].strip()
-                 
-             logger.info(f"Observer Evaluated: {clean_content[:50]}...")
+             # [FIX] Robust JSON Extraction
+             # Find the first '{' and the last '}'
+             start_idx = clean_content.find("{")
+             end_idx = clean_content.rfind("}")
              
-             # Verify it's at least vaguely JSON-like
-             if "{" in clean_content and "}" in clean_content:
-                 self.evaluations.append(clean_content)
-                 print(f"DEBUG: Stored evaluation. Total count: {len(self.evaluations)}") 
+             if start_idx != -1 and end_idx != -1:
+                 json_str = clean_content[start_idx : end_idx + 1]
                  
-                 # Log to Audit Trail (Try parsing for cleaner logs, but don't fail)
                  try:
-                     eval_data = json.loads(clean_content)
+                     # Validate it parses
+                     json.loads(json_str)
+                     
+                     self.evaluations.append(json_str)
+                     logger.info(f"Observer Evaluated: {json_str[:50]}...")
+                     
+                     # Log to Audit Trail
+                     eval_data = json.loads(json_str)
                      self.audit_logger.log_event("ObserverAgent", "EVALUATION_COMPLETE", "Turn evaluated", metadata=eval_data)
-                 except:
-                     self.audit_logger.log_event("ObserverAgent", "EVALUATION_RAW", "Raw evaluation logged", metadata={"raw": clean_content})
+                     
+                 except json.JSONDecodeError as e:
+                     logger.warning(f"Observer JSON Parse Failed: {e} | Content: {json_str}")
+                     self.audit_logger.log_event("ObserverAgent", "EVALUATION_FAILED", "JSON Parse Error", metadata={"error": str(e), "content": json_str})
              else:
-                 logger.warning(f"Observer generated non-JSON output: {clean_content}")
-                 self.audit_logger.log_event("ObserverAgent", "EVALUATION_FAILED", "Output was not JSON", metadata={"output": clean_content})
+                 logger.warning(f"Observer generated NO valid JSON object: {clean_content}")
+                 self.audit_logger.log_event("ObserverAgent", "EVALUATION_FAILED", "No JSON Found", metadata={"output": clean_content})
 
         except Exception as e:
             logger.error(f"Observer evaluation COMPLETED WITH ERROR: {e}")

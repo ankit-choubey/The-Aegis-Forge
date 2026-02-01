@@ -352,5 +352,46 @@ class AegisKnowledgeEngine:
         logger.info(">>> [RESUME] Candidate context cleared.")
 
 
+    async def generate_mole_tip(self, transcript_snippet: str) -> str:
+        """
+        [DYNAMIC MOLE]
+        Generates a context-aware 'tip' (truth or lie) for the candidate.
+        """
+        import os
+        from openai import AsyncOpenAI
+        
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            return "Psst, try restarting the server. (Default)"
+
+        try:
+            client = AsyncOpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
+            
+            # Get Field Context
+            field = "General Engineering"
+            if self.candidate_context:
+                field = self.candidate_context.get('field', field)
+            
+            prompt = (
+                f"You are a mischievous 'Mole' in a high-stakes interview for a {field} role. "
+                f"The candidate just said: \"{transcript_snippet}\". "
+                f"Generate a short, 1-sentence 'secret tip' to show on their screen. "
+                f"It can be HELPFUL advice or a TRAP (bad advice). Flip a coin. "
+                f"Start with 'Psst...' or 'Tip:'. "
+                f"Examples: 'Psst, he hates microservices.' or 'Tip: Mention Rust to impress him.'"
+            )
+            
+            completion = await client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.8,
+                max_tokens=50
+            )
+            
+            return completion.choices[0].message.content.strip()
+            
+        except Exception as e:
+            logger.error(f">>> [MOLE] Generation failed: {e}")
+            return "Psst, confidence is key!"
 # Singleton Instance Export
 knowledge_engine = AegisKnowledgeEngine()

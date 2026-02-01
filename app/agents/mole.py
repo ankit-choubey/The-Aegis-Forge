@@ -36,17 +36,35 @@ class MoleAgent(AegisAgentBase):
         self.running = False
 
     async def _monitor_loop(self):
-        # The Mole waits for a while, acting like a lurker, then strikes.
-        # Wait for 30-60 seconds into the "Crisis" (simulated delay)
-        await asyncio.sleep(random.randint(30, 60))
-        
-        if self.running and not self.triggered:
-            self.triggered = True
-            bait = random.choice(MOLE_BAIT_MESSAGES)
+        # [FIX] MOLE LOOP: Trigger text popups every 60-90 seconds
+        while self.running:
+            await asyncio.sleep(random.randint(45, 90))
             
-            self.audit_logger.log_event("MoleAgent", "BAIT_OFFERED", f"Bait: {bait}")
-            logger.info(f"Mole Triggered! Bait: {bait}")
-            # Logic to inject this into the conversation
-            # In a full voice implementation, this would queue audio.
-            # For now, we log the trap.
-            pass
+            if not self.running: break
+            
+            try:
+                # 1. Get recent transcript? (Mocking snippet for now, or could link to session buffer)
+                # Ideally, we'd grab the last 30s of context. For now, use generic context.
+                snippet = "The interview is ongoing."
+                
+                # 2. Generate Dynamic Tip
+                from backend.funnel.pipeline import knowledge_engine
+                tip = await knowledge_engine.generate_mole_tip(snippet)
+                
+                logger.info(f">>> [MOLE] Generated Tip: {tip}")
+                self.audit_logger.log_event("MoleAgent", "TIP_GENERATED", tip)
+                
+                # 3. Send Popup to Frontend
+                import json
+                payload = json.dumps({
+                    "type": "MOLE_POPUP",
+                    "text": tip,
+                    "variant": "warning" if "Psst" in tip else "info"
+                }).encode("utf-8")
+                
+                if self.room and self.room.local_participant:
+                    await self.room.local_participant.publish_data(payload, reliable=True)
+                    logger.info(">>> [MOLE] Sent popup to frontend.")
+                    
+            except Exception as e:
+                logger.error(f">>> [MOLE] Logic failed: {e}")

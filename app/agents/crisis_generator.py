@@ -156,8 +156,8 @@ async def generate_crisis_question(
         
         question = full_response.strip()
         
-        # Clean up any markdown or extra formatting
-        question = question.replace("```", "").replace("**", "").strip()
+        # [FIX] Do NOT strip markdown code blocks. We need them for IDE injection.
+        question = full_response.strip().replace("**", "")
         
         if question:
             logger.info(f">>> Generated crisis question: {question[:50]}...")

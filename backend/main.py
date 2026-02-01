@@ -24,7 +24,7 @@ logger = logging.getLogger("AEGIS-GATEWAY")
 # CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "https://f6bd14bc925f.ngrok-free.app", "*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

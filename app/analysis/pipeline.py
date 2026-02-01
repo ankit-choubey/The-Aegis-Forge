@@ -69,7 +69,7 @@ class InterviewPipeline:
         # We need to map the DQI object to DQIBreakdown
         # simplified for now
         dqi = DQIBreakdown(
-            score=int(overall_score * 10), # Assuming score is 0-10, scale to 100? Or if 0-100 keep it.
+            score=int(overall_score * 10) if overall_score <= 10 else int(overall_score),
             correct_decisions=len([m for m in dqi_data.get("metrics", []) if m.get("score", 0) > 7]),
             recoverable_mistakes=0,
             unjustified_assumptions=0,

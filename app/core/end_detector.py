@@ -51,6 +51,13 @@ def check_end_phrase(transcript: str) -> bool:
     # Normalize the transcript
     normalized = transcript.lower().strip()
     
+    # [NEW] Length Constraint: Genuinely ending an interview is usually short.
+    # If the transcript is long (e.g., > 6 words), it's likely a technical 
+    # explanation or code snippet, NOT a request to terminate.
+    words_count = len(normalized.split())
+    if words_count > 6:
+        return False
+
     # Remove punctuation for better matching
     normalized = re.sub(r'[^\w\s]', '', normalized)
     
