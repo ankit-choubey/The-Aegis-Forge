@@ -289,6 +289,28 @@ class AegisKnowledgeEngine:
                 return False
             
             self.candidate_context = extract_candidate_context(audit_data)
+            
+                # [FIX] Apply Manual Override if present (from set-candidate-role API)
+            if 'manual_role_override' in audit_data:
+                override_role = audit_data['manual_role_override']
+                self.candidate_context['field'] = override_role
+                self.candidate_context['role'] = override_role
+                self.candidate_context['detected_field'] = override_role
+                
+                # MAP ROLE TO SCENARIO
+                role_map = {
+                    "AI/ML": "ai-model-drift",
+                    "DevOps": "devops-redis-latency", 
+                    "Cybersecurity": "security-breach",
+                    "Blockchain": "smart-contract-exploit",
+                    "Backend": "backend-api-outage",
+                    "Frontend": "frontend-ui-crash"
+                }
+                # Update Scenario ID
+                self.candidate_context['scenario_id'] = role_map.get(override_role, "backend-api-outage")
+                
+                logger.info(f">>> [RESUME] Applied Manual Role Override: {override_role} -> {self.candidate_context['scenario_id']}")
+
             logger.info(f">>> [RESUME] Loaded candidate: {self.candidate_context.get('email', 'Unknown')}")
             logger.info(f">>> [RESUME] Detected field: {self.candidate_context.get('field', 'Unknown')}")
             logger.info(f">>> [RESUME] Verified skills: {self.candidate_context.get('verified_skills', [])}")

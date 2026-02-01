@@ -18,6 +18,12 @@ export default function Notepad() {
                 console.log("Notepad Toggle Triggered:", data.visible);
                 setIsVisible(data.visible);
             }
+            // [NEW] Handle Code Injection from Agent
+            if (data.type === "CODE_SNAPSHOT") {
+                console.log("Code Snapshot Received:", data.code.length, "chars");
+                setCode(data.code);
+                setIsVisible(true); // Auto-open on code receipt
+            }
         } catch (e) {
             // Ignore non-JSON messages
         }

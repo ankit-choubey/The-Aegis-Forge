@@ -3,11 +3,24 @@ from typing import List, Optional, Dict
 
 # --- Nested Components matching AegisForge PDF ---
 
+# --- Nested Components matching AegisForge PDF ---
+
+# [NEW] Radar Chart Data (Moved here to avoid NameError)
+class DQIRadar(BaseModel):
+    communication: int
+    problem_solving: int
+    technical: int
+    testing: int
+    system_design: int
+    crisis_management: int
+
 class TimelineEvent(BaseModel):
     time: str
     action: str
     state_change: str
     evaluation: str
+    pressure_handling_score: int  # 1-10 (For Graph)
+    sentiment_score: Optional[int] = None # [NEW] 1-10 Confidence/Sentiment
 
 class DQIBreakdown(BaseModel):
     score: int
@@ -56,6 +69,9 @@ class FSIR(BaseModel):
     
     # [NEW] FAANG Competency Grid
     faang_evaluation: Optional[Dict[str, str]] = None
+    
+    # [NEW] Radar Chart Data
+    competency_radar: Optional[DQIRadar] = None
 
 # --- DQI Calculator Schemas ---
 
@@ -64,8 +80,12 @@ class DQIMetric(BaseModel):
     score: float
     reasoning: str
 
+# [NEW] Radar Chart Data (Moved to top)
+# class DQIRadar(BaseModel) -> Moved to line 6
+
 class DQI(BaseModel):
     simulation_id: str
     overall_score: float
     metrics: List[DQIMetric]
     agent_feedback_summary: str
+    radar_chart: Optional[DQIRadar] = None

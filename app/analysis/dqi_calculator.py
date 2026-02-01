@@ -102,12 +102,61 @@ class DQICalculator:
             summary += "Candidate was competent but lacked speed or precision."
         else:
             summary += "Candidate struggled with diagnosis and resolution."
+            
+        # [NEW] Calculate Radar Chart Data
+        # Map ratings to scores
+        rating_map = {
+            "Strong Hire": 10,
+            "Hire": 7,
+            "No Hire": 3,
+            "Strong No Hire": 0
+        }
+        
+        # Initialize accumulators
+        radar_sums = {
+            "communication": [],
+            "problem_solving": [],
+            "technical": [],
+            "testing": [],
+            "system_design": [],
+            "crisis_management": []
+        }
+        
+        for log_entry in observer_logs:
+            try:
+                clean_entry = self._extract_json(log_entry).strip()
+                if clean_entry.startswith("```"):
+                     clean_entry = clean_entry.replace("```json", "").replace("```", "").strip()
+                data = json.loads(clean_entry)
+                
+                faang = data.get("faang_evaluation", {})
+                for dim, rating in faang.items():
+                    # Normalize key (handle case sensitivity)
+                    dim_key = dim.lower().replace(" ", "_")
+                    if dim_key in radar_sums and rating in rating_map:
+                        radar_sums[dim_key].append(rating_map[rating])
+            except:
+                continue
+                
+        # Calculate averages
+        from app.analysis.schemas import DQIRadar # Import specifically
+        
+        final_radar = {k: 0 for k in radar_sums}
+        for dim, scores in radar_sums.items():
+            if scores:
+                final_radar[dim] = int(sum(scores) / len(scores))
+            else:
+                # Fallback based on overall score proximity if no explicit data
+                final_radar[dim] = int(final_score) 
+                
+        radar_obj = DQIRadar(**final_radar)
 
         return DQI(
             simulation_id=simulation_id,
             overall_score=final_score,
             metrics=metrics,
-            agent_feedback_summary=summary
+            agent_feedback_summary=summary,
+            radar_chart=radar_obj
         )
 
 # Create the instance

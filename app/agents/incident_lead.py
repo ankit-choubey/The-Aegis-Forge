@@ -58,8 +58,10 @@ class IncidentLead(Agent, AegisAgentBase):
                 cand_name = "Candidate"
                 projects_str = "your recent projects" # Default
                 
+                cand_role = "Backend Engineer"
                 if isinstance(knowledge_engine.candidate_context, dict):
                     cand_name = knowledge_engine.candidate_context.get('name', 'Candidate')
+                    cand_role = knowledge_engine.candidate_context.get('role', knowledge_engine.candidate_context.get('field', 'Backend Engineer'))
                     # Try to extract projects if available in the context or audit data
                     raw_projects = knowledge_engine.candidate_context.get('projects', []) 
                     # If it's a list, join it. If string, use as is. 
@@ -69,9 +71,12 @@ class IncidentLead(Agent, AegisAgentBase):
                         projects_str = raw_projects
 
                 # Scripting the Flow
-                resume_ack_script = f"I have reviewed your resume and noticed your projects: {projects_str}. Impressive work."
+                if projects_str == "your recent projects":
+                     # Fallback if no specific projects found
+                     resume_ack_script = "I have reviewed your resume. Impressive work."
+                else:
+                     resume_ack_script = f"I have reviewed your resume and noticed your projects: {projects_str}. Impressive work."
                 intro_script = "So, first introduce yourself and tell me something NOT mentioned in your resume."
-
 
                 # [RECRUITER DASHBOARD] Check for Focus Topics
                 focus_topics_list = knowledge_engine.candidate_context.get('focus_topics', [])
@@ -115,6 +120,7 @@ class IncidentLead(Agent, AegisAgentBase):
                 )
             else:
                 enhanced_context = f"{scenario.context}\n\n{market_intel}"
+                cand_role = "Backend Engineer" # Default fallback
                 
             self.context = enhanced_context
             
@@ -142,11 +148,13 @@ class IncidentLead(Agent, AegisAgentBase):
             logger.error(f"Failed to load Knowledge Engine: {e}")
             self.context = scenario.context
             self.dynamic_questions = [] 
+            cand_role = "Backend Engineer"
         
         sys_prompt = self._build_system_prompt(
             INCIDENT_LEAD_SYSTEM, 
             initial_problem=self.initial_problem,
-            candidate_name=cand_name
+            candidate_name=cand_name,
+            job_role=cand_role # [NEW] Inject Job Role
         )
         
         # [NEW] Append dynamic questions to system prompt if available
@@ -171,6 +179,45 @@ class IncidentLead(Agent, AegisAgentBase):
             chat_ctx=_chat_ctx,
             tools=agent_tools  # <--- Changed from fnc_ctx
         )
+        
+    async def await_dynamic_questions(self):
+        """
+        [IMPROVEMENT] Block until dynamic questions are generated.
+        This ensures the Agent actually knows the custom questions before starting.
+        """
+        if self._pending_question_gen:
+            logger.info(">>> Waiting for dynamic questions to finish generation...")
+            try:
+                # Wait for the background task
+                questions = await self._pending_question_gen
+                
+                # If we got questions, update the system prompt!
+                if questions:
+                    self.dynamic_questions = questions
+                    
+                    # Re-build System Prompt with new questions
+                    sys_prompt = self._build_system_prompt(
+                        INCIDENT_LEAD_SYSTEM, 
+                        initial_problem=self.initial_problem,
+                        candidate_name="Candidate", # Re-fetch name if possible/needed or store in self
+                        job_role="Backend Engineer" # Re-fetch role
+                    )
+                    
+                    # Format and append
+                    questions_section = format_questions_for_prompt(self.dynamic_questions)
+                    final_prompt = sys_prompt + "\n" + questions_section
+                    
+                    # Update Chat Context Prompt (The tricky part)
+                    # We need to replace the first message (System)
+                    # LiveKit Agents ChatContext is a list of ChatMessage
+                    if self.chat_ctx.messages and self.chat_ctx.messages[0].role == "system":
+                         self.chat_ctx.messages[0].content = final_prompt
+                         logger.info(">>> System Prompt UPDATED with Dynamic Questions.")
+                    else:
+                         self.chat_ctx.messages.insert(0, llm.ChatMessage(role="system", content=final_prompt))
+                
+            except Exception as e:
+                logger.error(f">>> Failed to await dynamic questions: {e}")
         
     async def start_interview(self, session):
         """

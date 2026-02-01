@@ -153,15 +153,73 @@ def extract_name(text: str, filename: str, email: str) -> str:
     return "Candidate"
 
 
-def extract_resume_skills(text: str, skill_db: Dict) -> List[str]:
-    """Extract skills from resume text."""
-    found = []
-    text_lower = text.lower()
-    all_target_skills = [s for cat in skill_db.values() for s in cat]
-    for skill in all_target_skills:
-        if re.search(r'\b' + re.escape(skill) + r'\b', text_lower):
-            found.append(skill)
-    return list(set(found))
+def extract_skills_with_llm(text: str) -> List[str]:
+    """
+    Extract technical skills using Groq LLM for comprehensive detection.
+    Replaces brittle Regex matching.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.warning("No GROQ_API_KEY, falling back to basic extraction.")
+        return []
+
+    # Truncate text to avoid token limits (Resume text usually fits, but safety first)
+    safe_text = text[:6000]
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = (
+        "Extract ALL technical skills, programming languages, frameworks, tools, and platforms "
+        "listed in the following resume text. \n"
+        "Return ONLY a JSON list of strings (e.g. [\"Python\", \"React\", \"AWS\"]). \n"
+        "Do not include soft skills like 'Communication'. \n\n"
+        f"RESUME TEXT:\n{safe_text}"
+    )
+    
+    payload = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"}
+    }
+    
+    try:
+        logger.info(">>> Querying Groq for skills extraction...")
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data['choices'][0]['message']['content']
+            # Parse JSON response
+            extracted = json.loads(content)
+            
+            # Handle various JSON structures (key 'skills' or direct list)
+            if isinstance(extracted, list):
+                skills = extracted
+            elif isinstance(extracted, dict):
+                # Try to find the list value
+                skills = next((v for v in extracted.values() if isinstance(v, list)), [])
+            else:
+                skills = []
+                
+            # Clean and dedupe
+            clean_skills = list(set([str(s).strip() for s in skills if len(str(s)) < 30]))
+            logger.info(f"LLM Detected {len(clean_skills)} skills: {clean_skills[:5]}...")
+            return clean_skills
+        else:
+            logger.error(f"Groq API Error: {resp.text}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Skill Extraction Failed: {e}")
+        return []
+
+# Legacy Regex function removed/replaced
+
 
 
 def extract_project_section(text: str) -> List[str]:
@@ -254,7 +312,8 @@ def validate_resume(pdf_path: str) -> Dict[str, Any]:
     # Extract Name
     contact["name"] = extract_name(raw_text, pdf_path, contact.get("email", ""))
     
-    resume_skills = extract_resume_skills(raw_text, TARGET_SKILLS)
+    # [FIX] Use LLM for comprehensive skill extraction
+    resume_skills = extract_skills_with_llm(raw_text)
     resume_project_text = extract_project_section(raw_text)
     
     # Deep audit GitHub

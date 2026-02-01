@@ -29,6 +29,12 @@ def build_question_generation_prompt(candidate_context: Dict[str, Any]) -> str:
     projects = candidate_context.get('projects', [])
     github_repos = candidate_context.get('github', {}).get('repos', [])
     
+    # [FIX] Conditional Requirement for Project Question
+    if projects or github_repos:
+        project_q_instruction = "- 1 question about a SPECIFIC project or repo listed above (verify ownership)"
+    else:
+        project_q_instruction = "- 1 general question about their most challenging recent project (do NOT name a project)"
+
     prompt = f"""You are a senior technical interviewer. Generate 5 unique interview questions for a {field} candidate.
 
 CANDIDATE PROFILE:
@@ -41,18 +47,23 @@ CANDIDATE PROFILE:
 
 REQUIREMENTS:
 1. Generate exactly 5 questions in this order:
-   - 1 question about a SPECIFIC skill they claim (probe depth)
+   - 1 question about a SPECIFIC skill (MUST include a small code snippet to analyze)
    - 1 question about a SPECIFIC project or repo (verify ownership)
-   - 1 scenario-based question for their domain
+   - 1 scenario-based question for their domain (MUST include a snippet of broken code)
    - 1 system design / architecture question
    - 1 behavioral / problem-solving question
 
-2. Questions should be SPECIFIC to THIS candidate, not generic.
-3. If they claim "Python", ask about specific Python concepts they should know.
-4. If they have a repo called "ml-pipeline", ask about its architecture.
+2. Questions should be SPECIFIC to THIS candidate.
+3. For Skill/Scenario questions, provide a code block for them to debug/explain.
+4. QUESTIONS MUST BE CONCISE (Approx 25 words). NO LONG CONTEXT.
+
+CRITICAL:
+- Do NOT hallucinate project names. Only use project names EXPLICITLY listed in "Project Highlights" or "GitHub Repos".
+- If no projects are listed, ask generally about "a complex project you worked on".
 
 OUTPUT FORMAT:
-Return ONLY the 5 questions, one per line, numbered 1-5. No explanations.
+Return ONLY the 5 questions, one per line.
+MANDATORY: Wrap any code in ```python ... ``` blocks.
 """
     return prompt
 

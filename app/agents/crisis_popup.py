@@ -79,11 +79,11 @@ class CrisisPopupAgent:
             logger.info(">>> Crisis Popup Agent stopped")
             
     async def _crisis_loop(self):
-        """Trigger crisis popup: first at 3 min, second at 5 min after first."""
+        """Trigger crisis popup: first at 2.5 min, second at ~9 min total."""
         try:
-            # FIRST CRISIS: Wait 1 minute (User Request)
-            first_delay = 60  # 1 minute exactly
-            logger.info(f">>> Crisis #1 will trigger in {first_delay} seconds (3 minutes)")
+            # FIRST CRISIS: Wait 2.5 minutes (150s)
+            first_delay = 150
+            logger.info(f">>> Crisis #1 will trigger in {first_delay} seconds (2.5 minutes)")
             
             await asyncio.sleep(first_delay)
             
@@ -92,9 +92,9 @@ class CrisisPopupAgent:
                 logger.info(">>> CRISIS #1 TRIGGERING!")
                 await self._trigger_crisis()
             
-            # SECOND CRISIS: Wait another 5 minutes
-            second_delay = 300  # 5 minutes
-            logger.info(f">>> Crisis #2 will trigger in {second_delay} seconds (5 minutes)")
+            # SECOND CRISIS: Wait another 7 minutes (High Pressure Phase)
+            second_delay = 420  # 7 minutes
+            logger.info(f">>> Crisis #2 will trigger in {second_delay} seconds (9.5 minutes total)")
             
             await asyncio.sleep(second_delay)
             
@@ -150,6 +150,23 @@ class CrisisPopupAgent:
             await self._room.local_participant.publish_data(payload, reliable=True)
             logger.info(">>> Sent CRISIS_POPUP signal to frontend")
             
+            # [NEW] Also push Code to IDE if present
+            if "```" in question:
+                try:
+                    import re
+                    # [FIX] Robust regex (allow spaces/newlines)
+                    code_match = re.search(r"```(?:\w+)?\s*(.*?)```", question, re.DOTALL)
+                    if code_match:
+                         code_content = code_match.group(1).strip()
+                         code_payload = json.dumps({
+                             "type": "CODE_SNAPSHOT",
+                             "code": code_content
+                         }).encode("utf-8")
+                         await self._room.local_participant.publish_data(code_payload, reliable=True)
+                         logger.info(">>> Sent CODE_SNAPSHOT to IDE")
+                except Exception as e:
+                    logger.error(f"Failed to push crisis code to IDE: {e}")
+            
         except Exception as e:
             logger.error(f">>> Failed to send crisis alert: {e}")
             
@@ -179,8 +196,19 @@ class CrisisPopupAgent:
                 
                 # [FIX] Force immediate speech if session controls available
                 if self._session and hasattr(self._session, 'say'):
-                     asyncio.create_task(self._session.say(f"Hold on. I need to interrupt. {question}", allow_interruptions=False))
-                     logger.info(">>> [CRISIS] Forced immediate speech.")
+                     # Extract description for speech (remove code block)
+                     spoken_text = question
+                     if "```" in question:
+                         # Split by code block start
+                         parts = question.split("```")
+                         if parts:
+                             # Should be "ALERT: Description \n"
+                             spoken_text = parts[0].replace("ALERT:", "").strip()
+                     
+                     final_speech = f"Hold on. I need to interrupt. {spoken_text}. I've sent the code to your screen. Write the fix in the IDE now."
+                     
+                     asyncio.create_task(self._session.say(final_speech, allow_interruptions=False))
+                     logger.info(f">>> [CRISIS] Spoken: {final_speech}")
             except Exception as e:
                 logger.error(f">>> Failed to inject into lead agent: {e}")
                 

@@ -35,15 +35,34 @@ class InterviewPipeline:
             if event["event_type"] == "INTERVIEW_START":
                 start_time = event["timestamp"]
             
-            # Convert raw events to TimelineEvent if relevant
-            # For now, we filter for specific events or generic mapping
             if event["event_type"] in ["CRISIS_TRIGGERED", "INTERRUPTION", "BAIT_OFFERED"]:
                 rel_time = int(event["timestamp"] - start_time) if start_time else 0
+                
+                # Logic to infer generic score if not an evaluation
+                handling_score = 5 
+                
                 timeline.append(TimelineEvent(
                     time=f"{rel_time}s",
-                    action=event["actor"],
-                    state_change=event["event_type"],
-                    evaluation="N/A" # needs deeper analysis
+                    action=event.get("actor", "System"),
+                    state_change=event.get("event_type", ""),
+                    evaluation="Event Logged",
+                    pressure_handling_score=handling_score,
+                    sentiment_score=handling_score # [NEW] Default sentiment to handling score
+                ))
+
+            # [NEW] Add Observer Evaluations to Timeline for Graph Data
+            elif event["event_type"] == "EVALUATION_COMPLETE":
+                rel_time = int(event["timestamp"] - start_time) if start_time else 0
+                meta = event.get("metadata", {})
+                score = meta.get("score", 0) 
+                
+                timeline.append(TimelineEvent(
+                    time=f"{rel_time}s",
+                    action="Observer",
+                    state_change="Graded Performance",
+                    evaluation=f"Score: {score}",
+                    pressure_handling_score=int(score),
+                    sentiment_score=int(score) # [NEW] Use evaluation score as sentiment proxy
                 ))
 
         # 3. DQI Breakdown
@@ -113,5 +132,6 @@ class InterviewPipeline:
             communication_metrics=comm_metrics,
             skill_validation=skills,
             agent_consensus=consensus,
-            faang_evaluation=faang_grid or None
+            faang_evaluation=faang_grid or None,
+            competency_radar=dqi_data.get("radar_chart") # [NEW] Pass Radar Data
         )

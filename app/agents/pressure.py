@@ -66,5 +66,17 @@ class PressureAgent(AegisAgentBase):
                 # Assuming 'lead_logic' has a handle or we can use the room to send a text data packet
                 # that the frontend uses to display a notification or TTS.
                 
-                # TODO: Wire this to actual TTS or Chat if needed.
-                pass
+                try:
+                    import json
+                    payload = json.dumps({
+                        "type": "PRESSURE_ALERT",
+                        "sender": self.persona.name,
+                        "text": interjection
+                    }).encode("utf-8")
+                    
+                    if self.room and self.room.local_participant:
+                        # Schedule publish on the event loop
+                        asyncio.create_task(self.room.local_participant.publish_data(payload, reliable=True))
+                        logger.info(f">>> Sent PRESSURE ALERT: {interjection}")
+                except Exception as e:
+                    logger.error(f"Failed to send Pressure Alert: {e}")

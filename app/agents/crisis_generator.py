@@ -10,64 +10,100 @@ logger = logging.getLogger("aegis.agents.crisis_generator")
 
 
 CRISIS_PROMPTS = {
-    "devops": """You are a senior SRE. Generate ONE sudden crisis scenario question for a DevOps interview.
-The crisis should be urgent and require immediate action. Examples:
-- Kubernetes cluster node failures
-- Database replication lag
-- Load balancer issues
-- Container memory leaks
+    "devops": """You are a senior SRE. Generate ONE sudden crisis scenario for a DevOps interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of BROKEN CODE (YAML/Bash) causing an outage.
+Examples:
+- CrashLoopBackOff due to a typo in YAML.
+- `rm -rf` on wrong variable.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert.""",
+Return format:
+"ALERT: [1 sentence description]
+```yaml
+[3-5 lines of code]
+```
+Fix this!"
+""",
 
-    "ai_ml": """You are a senior ML Engineer. Generate ONE sudden crisis scenario question for an AI/ML interview.
-The crisis should be urgent and about production ML systems. Examples:
-- Model prediction drift
-- Training pipeline failure
-- GPU cluster issues
-- Data pipeline corruption
+    "ai_ml": """You are a senior ML Engineer. Generate ONE sudden crisis scenario for an AI/ML interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of BROKEN CODE (Python/SQL).
+Examples:
+- NaN loss due to bad input.
+- Memory leak in loop.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert.""",
+Return format:
+"ALERT: [1 sentence description]
+```python
+[3-5 lines of code]
+```
+Fix this!"
+""",
 
-    "cybersecurity": """You are a CISO. Generate ONE sudden crisis scenario question for a Cybersecurity interview.
-The crisis should be urgent and about security incidents. Examples:
-- Active breach detection
-- Ransomware spreading
-- DDoS attack
-- Credential leak
+    "cybersecurity": """You are a CISO. Generate ONE sudden crisis scenario for a Cybersecurity interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of VULNERABLE CODE.
+Examples:
+- SQL Injection in query.
+- Unsafe `eval()`.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert.""",
+Return format:
+"ALERT: [1 sentence description]
+```python
+[3-5 lines of code]
+```
+Patch this!"
+""",
 
-    "blockchain": """You are a Protocol Lead. Generate ONE sudden crisis scenario question for a Blockchain interview.
-The crisis should be urgent and about smart contract/DeFi issues. Examples:
-- Flash loan attack
-- Smart contract vulnerability
-- Bridge exploit
-- Gas price spike
+    "blockchain": """You are a Protocol Lead. Generate ONE sudden crisis scenario for a Blockchain interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of VULNERABLE SOLIDITY.
+Examples:
+- Reentrancy in withdraw.
+- Integer overflow.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert.""",
+Return format:
+"ALERT: [1 sentence description]
+```solidity
+[3-5 lines of code]
+```
+Fix this!"
+""",
 
-    "backend": """You are a VP of Engineering. Generate ONE sudden crisis scenario question for a Backend interview.
-The crisis should be urgent and about API/server issues. Examples:
-- API gateway 503 errors
-- Database connection pool exhaustion
-- Message queue backup
-- Memory leak in production
+    "backend": """You are a VP of Engineering. Generate ONE sudden crisis scenario for a Backend interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of BROKEN CODE (Python/Node).
+Examples:
+- Infinite loop.
+- Unclosed db connection.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert.""",
+Return format:
+"ALERT: [1 sentence description]
+```python
+[3-5 lines of code]
+```
+Debug this!"
+""",
 
-    "frontend": """You are a Tech Lead. Generate ONE sudden crisis scenario question for a Frontend interview.
-The crisis should be urgent and about frontend/user-facing issues. Examples:
-- Production build failure
-- Critical UI bug affecting users
-- Performance degradation
-- CDN issues
+    "frontend": """You are a Tech Lead. Generate ONE sudden crisis scenario for a Frontend interview.
+The crisis MUST include a TINY snippet (3-5 lines max) of BROKEN JS/REACT.
+Examples:
+- Undefined property access.
+- Infinite `useEffect`.
 
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert."""
+Return format:
+"ALERT: [1 sentence description]
+```javascript
+[3-5 lines of code]
+```
+Fix this!"
+"""
 }
 
-DEFAULT_PROMPT = """You are a senior engineer. Generate ONE sudden crisis scenario question for a technical interview.
-The crisis should be urgent and require immediate technical action.
-Return ONLY the crisis question, no explanation. Make it feel like a real incident alert."""
+DEFAULT_PROMPT = """You are a senior engineer. Generate ONE sudden crisis scenario for a technical interview.
+The crisis MUST include a small snippet of BROKEN CODE that requires fixing.
+Return the response in this format:
+"ALERT: [Brief Description]
+```python
+[Code Snippet with Bug]
+```
+Fix this code!"
+"""
 
 
 async def generate_crisis_question(
@@ -135,13 +171,15 @@ async def generate_crisis_question(
 
 
 def _get_fallback_crisis(domain: str) -> str:
-    """Fallback crisis questions if LLM fails."""
+    """Fallback crisis questions with code logic."""
+    # Note: Using generic text-based code descriptions if actual generation fails, 
+    # but ideally we want real code.
     fallbacks = {
-        "devops": "ALERT: 3 of your Kubernetes nodes just went down. Production traffic is being affected. What's your first move?",
-        "ai_ml": "ALERT: Your production recommendation model is returning random results. Conversion rate dropped 40%. What do you do?",
-        "cybersecurity": "ALERT: Our SIEM detected lateral movement from a compromised workstation. Active threat in progress. What's your response?",
-        "blockchain": "ALERT: Flash loan attack detected on your staking contract. $500k already drained. What's your immediate action?",
-        "backend": "ALERT: API returning 503 for all requests. Database connection pool exhausted. Users can't login. How do you proceed?",
-        "frontend": "ALERT: Production build just failed. Main page is blank for 50% of users. What do you do first?"
+        "devops": "ALERT: Kubernetes deployment failing. \n```yaml\nreplicas: 'three'\n```\nFix the type error in this YAML.",
+        "ai_ml": "ALERT: Model loss is NaN. \n```python\nloss = criterion(outputs, targets)\nloss.backward()\n# optimizer.step() missing\n```\nFix the training loop.",
+        "cybersecurity": "ALERT: SQL Injection detected. \n```python\ncursor.execute(f'SELECT * FROM users WHERE id={user_id}')\n```\nPatch this query.",
+        "blockchain": "ALERT: Reentrancy detected. \n```solidity\nmsg.sender.call.value(amount)('');\nbalances[msg.sender] -= amount;\n```\nFix the ordering.",
+        "backend": "ALERT: Production API hanging. \n```python\nwhile True:\n    data = get_data()\n    # missing break condition\n```\nFix the infinite loop.",
+        "frontend": "ALERT: White screen of death. \n```javascript\nconst [user, setUser] = useState();\nreturn <div>{user.name}</div>;\n```\nFix the undefined property access."
     }
-    return fallbacks.get(domain, "ALERT: Critical system failure detected. How do you approach this incident?")
+    return fallbacks.get(domain, "ALERT: Code failure. \n```python\nprint(1/0)\n```\nFix the ZeroDivisionError.")

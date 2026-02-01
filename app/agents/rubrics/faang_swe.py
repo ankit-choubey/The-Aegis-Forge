@@ -36,6 +36,20 @@ You evaluate the candidate on the following 4 DIMENSIONS:
    - No Hire: Relied on interviewer to find bugs. "It works" guess.
    - Strong No Hire: Did not verify code at all.
 
+5. SYSTEM DESIGN
+   - Signals: Discusses scalability, trade-offs, DB choice, API design?
+   - Strong Hire: Handles scale, discusses bottlenecks, CAP theorem considerations.
+   - Hire: Functional design, some gaps in scaling.
+   - No Hire: Monolithic thinking, no concept of load balancing/caching.
+   - Strong No Hire: No design provided.
+
+6. CRISIS MANAGEMENT
+   - Signals: Response to interruptions/changes? Composure under pressure?
+   - Strong Hire: Calm, adapts quickly, communicates changes clearly.
+   - Hire: Adapts but shows visible stress.
+   - No Hire: Freezes, ignores new information, or gives up.
+   - Strong No Hire: Aggressive or defensive response.
+
 JSON FORMAT:
 {{
   "timestamp": "ISO8601",
@@ -44,7 +58,9 @@ JSON FORMAT:
     "communication": "Strong Hire" | "Hire" | "No Hire",
     "problem_solving": "Strong Hire" | "Hire" | "No Hire",
     "technical": "Strong Hire" | "Hire" | "No Hire",
-    "testing": "Strong Hire" | "Hire" | "No Hire"
+    "testing": "Strong Hire" | "Hire" | "No Hire",
+    "system_design": "Strong Hire" | "Hire" | "No Hire",
+    "crisis_management": "Strong Hire" | "Hire" | "No Hire"
   }},
   "feedback_hooks": [
     "List of potential probing questions if signal is missing"

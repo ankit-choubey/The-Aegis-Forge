@@ -42,7 +42,7 @@
       "title": "Model Performance Drift",
       "difficulty": "Mid-Level",
       "context": "The recommendation engine for a major e-commerce site has started recommending completely irrelevant products (e.g., winter coats to users in summer). Conversion rate has dropped by 30% in the last 4 hours.",
-      "initial_problem": "Our conversion rate just tanked. The recommendations look random. The model hasn't been retrained in 2 weeks. What's going on?",
+      "initial_problem": "Our model conversion rate dropped. I see this data loader code ignoring NaN values incorrectly. Here is the snippet: ```python\ndef load_data(df):\n    # Drop NaNs blindly\n    return df.dropna()\n```. This is causing data loss. Fix the data loader.",
       "hiring_manager_persona": {
         "name": "Dr. Chen (Lead Data Scientist)",
         "tone": "Academic but practical, focused on data distribution.",

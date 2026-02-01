@@ -100,31 +100,19 @@ async def my_agent(ctx: JobContext):
         scenario_id = metadata
     else:
         # No metadata - try to load the LATEST audit from uploads folder
-        import glob
+        # [USER REQUEST] Force Specific Resume
         from pathlib import Path
-        uploads_dir = Path("uploads")
-        if uploads_dir.exists():
-            # [NEW] Detect both PDF and JSON, sort by newest
-            all_files = list(uploads_dir.glob("*.pdf")) + list(uploads_dir.glob("*_audit.json"))
-            candidates = sorted(all_files, key=lambda p: p.stat().st_mtime, reverse=True)
+        latest_file = Path("/Users/utkarshsingh/agents/Ankit Choubey Resume.pdf")
+        
+        if latest_file.exists():
+            logger.info(f">>> Processing SPECIFIC PDF: {latest_file.name}")
+            knowledge_engine.process_candidate_pdf(str(latest_file))
             
-            if candidates:
-                latest_file = candidates[0]
-                logger.info(f">>> Found latest candidate file: {latest_file.name}")
-                
-                # If PDF, process it first (VALIDATOR CONNECTION)
-                if latest_file.suffix.lower() == ".pdf":
-                    logger.info(">>> Processing new PDF upload...")
-                    knowledge_engine.process_candidate_pdf(str(latest_file))
-                else:
-                    # Valid JSON audit
-                    knowledge_engine.load_resume_audit(str(latest_file))
-
-                # Retrieve context (works for both paths)
-                candidate = knowledge_engine.get_candidate_context()
-                if candidate:
-                    scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
-                    logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
+            # Retrieve context (works for both paths)
+            candidate = knowledge_engine.get_candidate_context()
+            if candidate:
+                scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
+                logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
     
     scenario = loader.get_scenario(scenario_id)
     
@@ -196,6 +184,11 @@ async def my_agent(ctx: JobContext):
         )
         logger.warning(">>> Using fallback simple agent.")
     
+    # [IMPROVEMENT] Wait for Dynamic Questions to be generated (async)
+    # This prevents the "Generic Question" issue
+    if hasattr(lead_agent_logic, 'await_dynamic_questions'):
+        await lead_agent_logic.await_dynamic_questions()
+    
     # 2. Pressure Agent (Stakeholder)
     pressure_agent = PressureAgent(ctx.room, lead_agent_logic, scenario.stakeholder_persona, groq_llm, audit_logger)
     
@@ -238,6 +231,39 @@ async def my_agent(ctx: JobContext):
     if candidate_name:
         crisis_popup_agent.set_candidate_name(candidate_name)
     logger.info(f"Crisis Popup Agent initialized for domain: {scenario.domain}")
+
+    # =======================================================================
+    # [FEATURE] SIMLI AVATAR INTEGRATION (Backend Video Generation)
+    # =======================================================================
+    simli_key = os.getenv("SIMLI_API_KEY")
+    simli_face_id = os.getenv("SIMLI_FACE_ID", "5514e24d-6086-46a3-9c68-37255527026e") # Default ID
+    
+    if simli_key:
+        logger.info(">>> Initializing Simli Avatar Session...")
+        try:
+            from livekit.plugins.simli import SimliConfig, AvatarSession
+            
+            simli_config = SimliConfig(
+                api_key=simli_key,
+                face_id=simli_face_id,
+                max_session_length=2400, # Match interview length
+                max_idle_time=60
+            ) 
+            
+            avatar = AvatarSession(simli_config=simli_config)
+            
+            # This will hijack the session audio output and pipe it to Simli
+            # Simli will then Join the room as a video participant
+            await avatar.start(session, ctx.room)
+            
+            logger.info(">>> Simli Avatar STARTED. Video track should appear shortly.")
+            
+        except Exception as e:
+            logger.error(f">>> Failed to start Simli Avatar: {e}")
+            logger.warning(">>> Falling back to standard Audio-Only mode.")
+    else:
+        logger.warning(">>> SIMLI_API_KEY not found. Skipping Avatar Video.")
+    # =======================================================================
 
     # 7. Interview Timer [NEW] - 40 minute max
     interview_ended = False  # Flag to prevent multiple endings
@@ -307,9 +333,17 @@ async def my_agent(ctx: JobContext):
     )
     interview_timer.set_warning_callback(on_timer_warning)
 
+    # [NEW] Human Handover Flag
+    is_human_mode = False
+
     # --- Wire Transcripts to Observer Agent ---
     @session.on("user_input_transcribed")
     def on_user_speech(ev):
+        nonlocal is_human_mode
+        # [FIX] If Human Mode is active, AI should ignore user speech (Mute)
+        if is_human_mode:
+            return
+
         # ev is UserInputTranscribedEvent with `transcript` and `is_final`
         if ev.is_final:
             print(f"DEBUG: User Speech Detected: {ev.transcript}")  # <--- Added Debug
@@ -366,6 +400,24 @@ async def my_agent(ctx: JobContext):
                 audit_logger.log_event("IncidentLead", "TRANSCRIPT", content)
                 observer_agent.log_turn("incident_lead", content)
                 
+                # [NEW] Check for Code Blocks and Auto-Push to IDE
+                import re
+                # [FIX] More robust regex: allow whitespace/newlines after backticks
+                code_match = re.search(r"```(?:\w+)?\s*(.*?)```", content, re.DOTALL)
+                if code_match:
+                    extracted_code = code_match.group(1).strip()
+                    logger.info(f">>> DETECTED CODE BLOCK ({len(extracted_code)} chars). Push to IDE.")
+                    try:
+                        asyncio.create_task(ctx.room.local_participant.publish_data(
+                            json.dumps({
+                                "type": "CODE_SNAPSHOT",
+                                "code": extracted_code
+                            }).encode("utf-8"),
+                            reliable=True
+                        ))
+                    except Exception as e:
+                        logger.error(f"Failed to push code to IDE: {e}")
+
                 # [NEW] Log questions to questions logger
                 questions_logger.detect_and_log_question(content)
                 
@@ -388,32 +440,52 @@ async def my_agent(ctx: JobContext):
                 except Exception as e:
                     logger.error(f"Failed to broadcast AGENT transcript: {e}")
 
-    # --- Listen for Frontend Code Submissions ---
+    # --- Listen for Frontend Code Submissions & Handover ---
     @ctx.room.on("data_received")
     def on_data(datapacket: DataPacket):
+        nonlocal is_human_mode
         try:
             data_str = datapacket.data.decode("utf-8")
             payload = json.loads(data_str)
+            msg_type = payload.get("type")
             
-            if payload.get("type") == "ALGO_SUBMIT":
+            if msg_type == "HUMAN_TAKEOVER":
+                logger.warning(">>> [HANDOVER] Recruiter requested HUMAN TAKEOVER!")
+                is_human_mode = True
+                
+                # 1. Log Event
+                audit_logger.log_event("System", "MODE_SWITCH", "Switched to HUMAN mode")
+                
+                # 2. Stop Simli Avatar (if active)
+                if 'avatar' in locals() and avatar:
+                    logger.info(">>> [HANDOVER] Stopping Simli Avatar...")
+                    # Simli doesn't have stop(), but we can't do much. 
+                    # The audio stream will dry up effectively pausing it.
+                    pass 
+
+                # 3. Broadcast to Room (Frontend handles UI switch)
+                try:
+                    payload = json.dumps({
+                        "type": "MODE_SWITCH", 
+                        "mode": "HUMAN"
+                    }).encode("utf-8")
+                    asyncio.create_task(ctx.room.local_participant.publish_data(payload, reliable=True))
+                except Exception as e:
+                    logger.error(f"Failed to broadcast MODE_SWITCH: {e}")
+
+            elif msg_type == "ALGO_SUBMIT":
                 code = payload.get("code")
+                # ... existing algo submit logic ... #
+                # Re-implementing logic here since replacement overwrites it:
                 logger.info(f">>> RECEIVED CODE SUBMISSION ({len(code)} chars)")
-                
-                # 1. Log to Audit
                 audit_logger.log_event("Candidate", "CODE_SUBMIT", code)
-                
-                # [NEW] Log code submission to questions logger
                 questions_logger.log_code_submission(code)
-                
-                # 2. Inject into LLM Context
                 lead_agent_logic.chat_ctx.append(
                     llm.ChatMessage(
                         role="user", 
                         content=f"I have written the following Python code:\n```python\n{code}\n```\nPlease evaluate it."
                     )
                 )
-                
-                # 3. Trigger Agent Acknowledgment
                 asyncio.create_task(lead_agent_logic.say("I have received your code. Let me check it.", allow_interruptions=True))
                 
         except Exception as e:
@@ -477,14 +549,33 @@ async def my_agent(ctx: JobContext):
             logger.info(f"FSIR Report generated: {filename}")
             print(f"FSIR SUCCESS: {filename}")
             
-            # [NEW] Generate PDF Report
+                # [NEW] Generate PDF Report
             try:
                 pdf_generator = PDFReportGenerator()
                 pdf_bytes = pdf_generator.generate_report_bytes(fsir_report.model_dump())
+                
+                # 1. Save with Session ID (Original)
                 pdf_filename = f"fsir_{audit_logger.session_id}.pdf"
                 with open(pdf_filename, "wb") as pdf_file:
                     pdf_file.write(pdf_bytes)
                 logger.info(f"PDF Report generated: {pdf_filename}")
+                
+                # 2. Save with Candidate ID (For API Download)
+                if audit_logger.candidate_id:
+                    # Sanitize ID
+                    clean_id = str(audit_logger.candidate_id).replace("audit:", "").strip()
+                    api_filename = f"fsir_{clean_id}.pdf"
+                    
+                    # [FIX] Save to UPLOADS directory for Backend Access
+                    from pathlib import Path
+                    uploads_dir = Path("uploads")
+                    uploads_dir.mkdir(exist_ok=True)
+                    final_path = uploads_dir / api_filename
+                    
+                    import shutil
+                    shutil.copy(pdf_filename, final_path)
+                    logger.info(f"PDF Copied for API: {final_path}")
+
                 print(f"PDF SUCCESS: {pdf_filename}")
             except Exception as pdf_err:
                 logger.error(f"Failed to generate PDF report: {pdf_err}")
