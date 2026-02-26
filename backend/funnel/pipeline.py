@@ -7,6 +7,9 @@ from typing import Dict, Any, Optional
 # Import Resume Validator
 from backend.resume_validator import validate_resume
 
+# Import Pathway RAG Engine
+from backend.funnel.pathway_engine import PathwayRAGEngine
+
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("AEGIS-PATHWAY")
@@ -59,7 +62,11 @@ class AegisKnowledgeEngine:
             cls._instance.context_store = {}
             cls._instance.candidate_context = None
             cls._instance.dynamic_intel = {}  # CACHE FOR LLM RESULTS
-            logger.info(">>> [SYSTEM] Knowledge Engine + Researcher Active (God Mode).")
+            # Initialize Pathway RAG Engine for real-time vector indexing
+            cls._instance.pathway_rag = PathwayRAGEngine()
+            # Pre-index scenario definitions on startup
+            cls._instance.pathway_rag.index_scenarios_from_file()
+            logger.info(">>> [SYSTEM] Knowledge Engine + Researcher + Pathway RAG Active (God Mode).")
         return cls._instance
 
     def process_candidate_pdf(self, pdf_path: str) -> Dict[str, Any]:
@@ -107,7 +114,11 @@ class AegisKnowledgeEngine:
         # 4. Load into Context
         self.candidate_context = audit_data 
         
-        # 5. Load Recruiter Focus Topics
+        # 5. Index into Pathway RAG (Real-Time Vector Store)
+        self.pathway_rag.index_resume_audit(audit_data, candidate_id=name)
+        logger.info(f">>> [PATHWAY] Resume indexed into vector store for: {name}")
+        
+        # 6. Load Recruiter Focus Topics
         self.load_focus_topics()
         
         return audit_data
@@ -314,6 +325,11 @@ class AegisKnowledgeEngine:
             logger.info(f">>> [RESUME] Loaded candidate: {self.candidate_context.get('email', 'Unknown')}")
             logger.info(f">>> [RESUME] Detected field: {self.candidate_context.get('field', 'Unknown')}")
             logger.info(f">>> [RESUME] Verified skills: {self.candidate_context.get('verified_skills', [])}")
+            
+            # Index into Pathway RAG vector store
+            self.pathway_rag.index_resume_audit(audit_data, candidate_id=self.candidate_context.get('email', 'candidate'))
+            logger.info(">>> [PATHWAY] Resume audit indexed into vector store.")
+            
             return True
             
         except Exception as e:
@@ -345,6 +361,27 @@ class AegisKnowledgeEngine:
         except Exception as e:
             logger.error(f">>> [PROMPT] Format error: {e}")
             return ""
+
+    def query_knowledge(self, question: str, top_k: int = 3) -> str:
+        """
+        Query the Pathway RAG vector store for relevant context.
+        
+        This is the primary interface for agents to retrieve contextual
+        information during interviews. Uses semantic/keyword retrieval
+        powered by Pathway's real-time indexing engine.
+        
+        Args:
+            question: Natural language query (e.g. "What backend skills does the candidate have?")
+            top_k: Number of top results to return
+            
+        Returns:
+            Relevant context string, or empty string if no results
+        """
+        return self.pathway_rag.query_context(question, top_k=top_k)
+
+    def get_pathway_stats(self) -> dict:
+        """Get Pathway RAG engine statistics."""
+        return self.pathway_rag.get_stats()
 
     def clear_candidate(self):
         """Clear loaded candidate context."""

@@ -108,8 +108,8 @@
 │                           (FastAPI)                                     │
 │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │
 │   │ Resume      │  │ Knowledge   │  │ LiveKit     │  │ Report      │   │
-│   │ Validator   │  │ Engine      │  │ Dispatcher  │  │ Generator   │   │
-│   │ + GitHub    │  │ (Singleton) │  │             │  │ (PDF/JSON)  │   │
+│   │ Validator   │  │ Engine +    │  │ Dispatcher  │  │ Generator   │   │
+│   │ + GitHub    │  │ Pathway RAG │  │             │  │ (PDF/JSON)  │   │
 │   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘   │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │ LiveKit Protocol
@@ -146,9 +146,9 @@
 ### Data Flow
 
 1. **Resume Upload** → Validation → GitHub verification → Field detection
-2. **Knowledge Engine** → Loads audit data → Generates market intel → Creates context
+2. **Knowledge Engine** → Loads audit data → **Pathway RAG indexes documents** → Generates market intel → Creates context
 3. **LiveKit Dispatch** → Creates room → Generates token → Spawns agent
-4. **Interview Session** → Multi-agent coordination → Real-time evaluation
+4. **Interview Session** → Multi-agent coordination → **Pathway RAG context retrieval** → Real-time evaluation
 5. **Report Generation** → Observer logs → DQI calculation → PDF export
 
 ---
@@ -161,6 +161,7 @@
 |:-----------|:--------|:--------|:-----|
 | **Python** | 3.11+ | Core language | Async support, rich ML ecosystem |
 | **FastAPI** | Latest | API Gateway | Async, auto-docs, type safety |
+| **Pathway** | 0.29+ | Real-time RAG pipeline & vector indexing | Incremental indexing, unified batch/stream processing |
 | **LiveKit Agents** | 0.8.0+ | Multi-agent framework | WebRTC native, multi-modal support |
 | **Groq (Llama 3.1)** | llama-3.1-8b-instant | LLM inference | ~200ms latency, cost-effective |
 | **Deepgram** | Nova-3 | STT + TTS | Low latency streaming audio |
@@ -578,7 +579,8 @@ aegis-forge/
 │   ├── livekit_dispatch.py       # LiveKit room management
 │   │
 │   ├── funnel/
-│   │   └── pipeline.py           # Knowledge Engine (Singleton)
+│   │   ├── pipeline.py           # Knowledge Engine (Singleton)
+│   │   └── pathway_engine.py     # Pathway RAG vector store & retrieval
 │   │
 │   └── core/
 │       ├── state.py              # State machine
