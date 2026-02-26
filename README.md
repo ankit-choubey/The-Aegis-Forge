@@ -6,6 +6,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![Pathway](https://img.shields.io/badge/Pathway-RAG_Engine-orange.svg)](https://pathway.com)
 [![Next.js](https://img.shields.io/badge/Next.js-16+-black.svg)](https://nextjs.org)
 [![LiveKit](https://img.shields.io/badge/LiveKit-Agents-purple.svg)](https://livekit.io)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](license.md)
@@ -151,7 +152,55 @@
 4. **Interview Session** → Multi-agent coordination → **Pathway RAG context retrieval** → Real-time evaluation
 5. **Report Generation** → Observer logs → DQI calculation → PDF export
 
----
+### 🔄 Pathway-Powered Knowledge Engine
+
+The Knowledge Engine is the central intelligence layer of Aegis Forge, powered by [**Pathway**](https://pathway.com) — a real-time data processing framework built on Rust with a Python API.
+
+#### Why Pathway?
+
+Traditional RAG systems use batch re-indexing: every time a document changes, the entire corpus is re-processed. Pathway eliminates this with **incremental computation** — only the new or changed documents are processed, making the system reactive and always up-to-date.
+
+#### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                  PATHWAY RAG PIPELINE                           │
+│                                                                 │
+│   ┌──────────┐     ┌──────────────┐     ┌──────────────────┐   │
+│   │ Resume   │────▶│ Token-Aware  │────▶│ Pathway Document │   │
+│   │ Upload   │     │ Chunking     │     │ Table (pw.Table) │   │
+│   └──────────┘     └──────────────┘     └────────┬─────────┘   │
+│                                                  │             │
+│   ┌──────────┐     ┌──────────────┐              │             │
+│   │ Scenario │────▶│ Structured   │──────────────┤             │
+│   │ Defs     │     │ Indexing     │              │             │
+│   └──────────┘     └──────────────┘              ▼             │
+│                                         ┌──────────────────┐   │
+│   ┌──────────┐     ┌──────────────┐     │  Keyword/TF      │   │
+│   │ Agent    │────▶│ query_       │────▶│  Scored Retrieval │   │
+│   │ Query    │     │ knowledge()  │     │  (Top-K Results)  │   │
+│   └──────────┘     └──────────────┘     └──────────────────┘   │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Indexing Pipeline
+
+| Stage | What Happens | Pathway Feature Used |
+|:------|:-------------|:--------------------|
+| **1. Resume Audit** | PDF parsed → skills, projects, GitHub data extracted → chunked into sections | `pw.Schema`, incremental table operations |
+| **2. Scenario Defs** | 5 interview scenarios from `scenarios.json` pre-indexed on server startup | Bulk indexing with structured extraction |
+| **3. Market Intel** | Dynamic Groq-generated intelligence cached and indexed per candidate field | Real-time document updates |
+| **4. Context Query** | Agents query `knowledge_engine.query_knowledge("question")` for interview context | Keyword/TF scored retrieval (Top-K) |
+
+#### Key Benefits
+
+- **🚀 Incremental Indexing** — New resumes are indexed in milliseconds, not minutes
+- **🔄 Always Up-to-Date** — Pathway's reactive model ensures the latest data is always queryable
+- **🎯 Context-Aware Retrieval** — Agents get semantically relevant context for every question
+- **📊 Unified Pipeline** — Same code works for batch (startup) and streaming (live uploads)
+- **🛡️ No Stale Data** — Unlike traditional vector stores, Pathway never serves outdated results
+
 
 ## 🛠️ Tech Stack
 
