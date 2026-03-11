@@ -223,22 +223,67 @@ def extract_skills_with_llm(text: str) -> List[str]:
 
 
 def extract_project_section(text: str) -> List[str]:
-    """Extract project descriptions from resume."""
-    lines = text.split('\n')
-    project_content = []
-    capture = False
+    """
+    Extract project descriptions from resume using Groq LLM for robust detection.
+    Replaces brittle keyword matching.
+    """
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.warning("No GROQ_API_KEY, falling back to basic extraction.")
+        return []
+
+    # Truncate text to avoid token limits
+    safe_text = text[:6000]
+
+    url = "https://api.groq.com/openai/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
     
-    for line in lines:
-        clean = line.strip().upper()
-        if any(h in clean for h in SECTION_HEADERS):
-            capture = True
-            continue
-        if capture and any(x in clean for x in ["EDUCATION", "SKILLS", "CERTIFICATIONS"]):
-            capture = False
-        if capture and line.strip():
-            project_content.append(line.strip())
+    prompt = (
+        "Extract the names and a very brief 1-sentence summary of the top 3 projects "
+        "listed in the following resume text. \n"
+        "Return ONLY a JSON list of strings (e.g. [\"E-Commerce Platform - Built a scalable backend using Node.js and MongoDB.\"]). \n"
+        f"RESUME TEXT:\n{safe_text}"
+    )
+    
+    payload = {
+        "model": "llama-3.1-8b-instant",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "response_format": {"type": "json_object"}
+    }
+    
+    try:
+        logger.info(">>> Querying Groq for projects extraction...")
+        resp = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            content = data['choices'][0]['message']['content']
+            # Parse JSON response
+            extracted = json.loads(content)
             
-    return project_content
+            # Handle various JSON structures
+            if isinstance(extracted, list):
+                projects = extracted
+            elif isinstance(extracted, dict):
+                # Try to find the list value
+                projects = next((v for v in extracted.values() if isinstance(v, list)), [])
+            else:
+                projects = []
+                
+            clean_projects = [str(p).strip() for p in projects if isinstance(p, str)]
+            logger.info(f"LLM Detected {len(clean_projects)} projects.")
+            return clean_projects
+        else:
+            logger.error(f"Groq API Error during projects extraction: {resp.text}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"Project Extraction Failed: {e}")
+        return []
 
 
 def audit_github_deep(url: Optional[str]) -> Dict[str, Any]:

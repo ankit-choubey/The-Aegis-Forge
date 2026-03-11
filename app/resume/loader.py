@@ -136,8 +136,19 @@ def extract_candidate_context(audit_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     field = detect_candidate_field(audit_data)
     
+    # Human-readable role labels
+    FIELD_ROLE_LABELS = {
+        "ai_ml": "AI/ML Engineer",
+        "cybersecurity": "Cybersecurity Engineer",
+        "blockchain": "Blockchain Developer",
+        "devops": "DevOps Engineer",
+        "backend": "Backend Engineer",
+        "frontend": "Frontend Developer",
+    }
+    
     return {
         "field": field,
+        "role": FIELD_ROLE_LABELS.get(field, "Software Engineer"),
         "scenario_id": get_scenario_for_field(field),
         "trust_score": audit_data.get('summary', {}).get('trust_score', 'Unknown'),
         "integrity_level": audit_data.get('summary', {}).get('integrity_level', 'Unknown'),

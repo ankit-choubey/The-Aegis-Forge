@@ -1,43 +1,45 @@
 "use client";
 
-import React from "react";
-import Link from "next/link";
-import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { motion } from "framer-motion";
+import Link from "next/link";
+import { Shield } from "lucide-react";
 
 export const Navbar = () => {
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 px-6 py-4 transition-all duration-300 backdrop-blur-md bg-white/70 dark:bg-black/70 border-b border-border">
-            <div className="max-w-7xl mx-auto flex items-center justify-between">
-                {/* Logo */}
-                <Link href="/" className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded bg-primary flex items-center justify-center font-bold text-white">
-                        A
+        <motion.header
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 w-full max-w-5xl z-50 px-4"
+        >
+            <div className="glass-panel rounded-full px-6 py-3 flex items-center justify-between">
+                <Link href="/" className="flex items-center gap-3 cursor-pointer group">
+                    <div className="relative">
+                        <Shield className="w-6 h-6 text-emerald-400 group-hover:text-emerald-300 transition-colors" />
+                        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse blur-[1px]" />
                     </div>
-                    <span className="font-bold text-xl font-[family-name:var(--font-space-grotesk)] text-foreground">
-                        Aegis-Forge
-                    </span>
+                    <span className="font-mono font-bold tracking-widest text-slate-100 text-sm group-hover:text-white transition-colors">AEGIS-FORGE</span>
                 </Link>
 
-                {/* Links (Desktop) */}
-                <div className="hidden md:flex items-center gap-8 font-medium text-sm text-foreground/80">
-                    <a href="/features" className="hover:text-primary transition-colors">Features</a>
-                    <a href="#solutions" className="hover:text-primary transition-colors">Solutions</a>
-                    <a href="#protocol" className="hover:text-primary transition-colors">Protocol</a>
-                    <a href="#pricing" className="hover:text-primary transition-colors">Pricing</a>
-                </div>
+                <nav className="hidden md:flex items-center gap-8">
+                    <Link href="/recruiter" className="text-sm font-medium text-slate-400 hover:text-emerald-400 transition-colors">
+                        Recruiter Portal
+                    </Link>
+                    <Link href="#crisis-section" className="text-sm font-medium text-slate-400 hover:text-emerald-400 transition-colors">
+                        Eco-Impact
+                    </Link>
+                    <Link href="#hexagon-scroll-section" className="text-sm font-medium text-slate-400 hover:text-emerald-400 transition-colors">
+                        FSIR Protocol
+                    </Link>
+                </nav>
 
-                {/* Actions */}
-                <div className="flex items-center gap-4">
-                    <a href="#" className="hidden md:block text-sm font-medium hover:text-primary">
-                        Log In
-                    </a>
-                    <ThemeToggle />
-                    <button className="bg-foreground text-background px-5 py-2 rounded-full text-sm font-bold hover:opacity-90 transition-opacity">
-                        Initialize
-                    </button>
+                <div>
+                    <Link href="/candidate" className="relative group flex items-center justify-center overflow-hidden rounded-full px-6 py-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium text-sm transition-all hover:bg-emerald-500/20 hover:shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                        <span className="relative z-10">Deploy Green AI</span>
+                        <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-emerald-400/20 to-transparent" />
+                    </Link>
                 </div>
             </div>
-        </nav>
+        </motion.header>
     );
 };

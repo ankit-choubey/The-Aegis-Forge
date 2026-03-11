@@ -1,5 +1,10 @@
 import logging
 import os
+import sys
+from pathlib import Path
+
+# Fix python path for module imports when running directly
+sys.path.append(str(Path(__file__).parent.parent))
 
 from dotenv import load_dotenv
 
@@ -57,7 +62,7 @@ from backend.resume_validator import validate_resume
 from backend.main import UPLOADS_DIR, extract_candidate_context, detect_candidate_field
 import os
 
-load_dotenv(dotenv_path=".env.local")
+load_dotenv(dotenv_path=".env")
 logger = logging.getLogger("aegis.main")
 
 # Debug: Check keys
@@ -103,35 +108,66 @@ async def my_agent(ctx: JobContext):
     scenario_id = "devops-redis-latency"  # Default
     
     metadata = ctx.job.metadata if ctx.job.metadata else ""
+    candidate_id = "unknown_candidate"
     
     if metadata.startswith("audit:"):
-        # Load resume audit from metadata
-        audit_path = metadata.replace("audit:", "").strip()
-        logger.info(f"Loading candidate audit from metadata: {audit_path}")
+        # Format: "audit:candidate_id:/path/to/audit.json"
+        parts = metadata.split(":", 2)
+        if len(parts) == 3:
+            _, candidate_id, audit_path = parts
+        else:
+            # Fallback for old format
+            audit_path = metadata.replace("audit:", "").strip()
+            # Try to extract candidate_id from filename (e.g., cbca51e2_audit.json)
+            candidate_id = audit_path.split("/")[-1].replace("_audit.json", "")
+            
+        logger.info(f"Loading candidate audit from metadata: {audit_path} (ID: {candidate_id})")
         
         if knowledge_engine.load_resume_audit(audit_path):
             candidate = knowledge_engine.get_candidate_context()
+            logger.info(f">>> [DEBUG metadata] get_candidate_context() returns: {candidate}") 
             if candidate:
+                parsed_name = candidate.get('name', 'Candidate')
                 scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
-                logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
+                logger.info(f">>> Detected field: {candidate.get('field')}, name: {parsed_name}, using scenario: {scenario_id}")
     elif metadata:
         # Use metadata as direct scenario ID
         scenario_id = metadata
     else:
-        # No metadata - try to load the LATEST audit from uploads folder
-        # [USER REQUEST] Force Specific Resume
+        # No metadata - dynamically find the most recently uploaded PDF resume
         from pathlib import Path
-        latest_file = Path("/Users/utkarshsingh/agents/Ankit Choubey Resume.pdf")
+        uploads_dir = Path("uploads")
+        latest_file = None
         
-        if latest_file.exists():
-            logger.info(f">>> Processing SPECIFIC PDF: {latest_file.name}")
+        # Find the most recently modified PDF in uploads/ (excludes audit JSONs and generated AI reports)
+        pdf_candidates = sorted(
+            [p for p in uploads_dir.glob("*.pdf") if "_audit" not in p.name and not p.name.startswith("fsir_")],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True
+        ) if uploads_dir.exists() else []
+        
+        if pdf_candidates:
+            latest_file = pdf_candidates[0]
+            logger.info(f">>> [RESUME] Auto-detected latest PDF: {latest_file.name}")
+        else:
+            logger.warning(">>> [RESUME] No PDF found in uploads/. Proceeding with default scenario.")
+        
+        if latest_file and latest_file.exists():
+            logger.info(f">>> Processing latest uploaded PDF: {latest_file.name}")
             knowledge_engine.process_candidate_pdf(str(latest_file))
             
             # Retrieve context (works for both paths)
             candidate = knowledge_engine.get_candidate_context()
+            logger.info(f">>> [DEBUG] get_candidate_context() returns: {candidate}") # [NEW LOG]
             if candidate:
+                # Validate we got real data, not defaults
+                parsed_name = candidate.get('name', 'Candidate')
+                if parsed_name == 'Candidate' or not parsed_name:
+                    logger.warning(">>> [RESUME] Candidate name defaulted to 'Candidate' — resume parsing may have failed")
                 scenario_id = candidate.get('scenario_id', 'devops-redis-latency')
-                logger.info(f">>> Detected field: {candidate.get('field')}, using scenario: {scenario_id}")
+                logger.info(f">>> Detected field: {candidate.get('field')}, name: {parsed_name}, using scenario: {scenario_id}")
+            else:
+                logger.error(">>> [RESUME] get_candidate_context() returned None after PDF processing!")
     
     # [FEATURE] Custom Role Support
     if scenario_id == "custom":
@@ -179,23 +215,22 @@ async def my_agent(ctx: JobContext):
     )
     
     # [FIX] Use separate model for Observer to split Rate Limits
-    # Mixtral has separate quota? Or at least reduces 8b usage load
     observer_llm = groq.LLM(
-        model="mixtral-8x7b-32768", 
+        model="llama-3.3-70b-versatile", 
         api_key=groq_key,
     )
     
     # Initialize Audit Logger
     audit_logger = SessionAuditLogger(
         session_id=ctx.job.id,
-        candidate_id=ctx.job.metadata or "unknown_candidate"
+        candidate_id=candidate_id
     )
     audit_logger.log_event("System", "SESSION_START", "Interview session initialized")
     
     # Initialize Questions Logger [NEW]
     questions_logger = QuestionsLogger(
         session_id=ctx.job.id,
-        candidate_name=ctx.job.metadata or "Candidate",
+        candidate_name=candidate_id,
         domain=scenario.domain
     )
     
@@ -386,6 +421,8 @@ async def my_agent(ctx: JobContext):
 
     # [NEW] Human Handover Flag
     is_human_mode = False
+    # [FIX] Dedup tracker for agent speech broadcasts (conversation_item_added fires twice)
+    _last_agent_broadcast = ""
 
     # --- Wire Transcripts to Observer Agent ---
     @session.on("user_input_transcribed")
@@ -430,11 +467,21 @@ async def my_agent(ctx: JobContext):
                     reliable=True
                 ))
                 task.add_done_callback(lambda t: logger.info(f"Broadcasted USER transcript: {len(ev.transcript)} chars"))
+                
+                # [FIX - BUG 6]: If we override the transcription event, the AgentSession might drop the turn.
+                # Explicitly instruct the agent to generate a reply based on the new user input.
+                if hasattr(session, 'generate_reply'):
+                    logger.info(">>> Forcing LLM response to user input...")
+                    asyncio.create_task(session.generate_reply(user_input=ev.transcript))
+                else:
+                    logger.warning(">>> session does not have generate_reply method. Agent might stop responding.")
             except Exception as e:
-                logger.error(f"Failed to broadcast USER transcript: {e}")
+                logger.error(f"Failed to broadcast USER transcript or trigger reply: {e}")
             
     @session.on("conversation_item_added")
     def on_agent_speech(ev):
+        import asyncio  # [FIX] Ensure asyncio is available in this closure scope
+        nonlocal _last_agent_broadcast
         # ev is ConversationItemAddedEvent with `item` (ChatMessage)
         # Robust check for role (handle Enum or String)
         role = getattr(ev.item, 'role', '')
@@ -447,6 +494,11 @@ async def my_agent(ctx: JobContext):
                 content = str(raw_content)
                 
             if content:
+                # [FIX] Dedup: conversation_item_added fires twice for the same message
+                if content == _last_agent_broadcast:
+                    return  # Skip duplicate
+                _last_agent_broadcast = content
+                
                 print(f"DEBUG: Agent Speech Detected: {content}")
                 audit_logger.log_event("IncidentLead", "TRANSCRIPT", content)
                 observer_agent.log_turn("incident_lead", content)
@@ -533,45 +585,127 @@ async def my_agent(ctx: JobContext):
                 output = payload.get("output", "")
                 logger.info(f">>> RECEIVED CODE SUBMISSION ({len(code)} chars, output: {len(output)})")
                 
-                # Truncate if extreme
-                if len(code) > 15000: code = code[:15000] + "... (truncated)"
-                if len(output) > 2000: output = output[:2000] + "... (truncated)"
+                # Truncate if extreme (Strictly limited for free Groq API tiers)
+                if len(code) > 2000: code = code[:2000] + "... (truncated)"
+                if len(output) > 500: output = output[:500] + "... (truncated)"
 
                 # 1. Log to Audit/Questions
                 audit_logger.log_event("Candidate", "CODE_SUBMIT", code)
                 questions_logger.log_code_submission(code)
                 
+                # Check for explicit crash keywords in the output to force the LLM to address the bug
+                is_crash = any(err_word in output for err_word in ["Traceback", "Error", "Exception", "ModuleNotFoundError"])
+
                 # 2. Add to LLM Context for immediate evaluation
-                eval_text = f"The candidate has executed/submitted the following code.\n\n### CODE:\n```python\n{code}\n```"
-                if output:
-                    eval_text += f"\n\n### EXECUTION OUTPUT:\n{output}"
-                eval_text += "\n\nPlease review it and acknowledge. If it's correct/fixing the issue, proceed. If not, provide feedback."
+                if is_crash:
+                    eval_text = (
+                        f"The candidate's code execution completely FAILED with a RUNTIME ERROR.\n\n"
+                        f"### CODE EXECUTED:\n```python\n{code}\n```\n\n"
+                        f"### CRASH TRACEBACK:\n{output}\n\n"
+                        f"CRITICAL INSTRUCTION: You MUST stop your interview flow immediately. Point out the specific error message to the candidate and ask them how they would debug or fix this crash. DO NOT ask advanced follow-up questions about memory leaks or scaling until they fix this syntax/runtime bug."
+                    )
+                else:
+                    eval_text = (
+                        f"The candidate has executed the following code.\n\n"
+                        f"### CODE:\n```python\n{code}\n```"
+                    )
+                    if output:
+                        eval_text += f"\n\n### EXECUTION OUTPUT:\n{output}"
+                    eval_text += "\n\nReview the execution results. If it looks logically correct, acknowledge it and then you may proceed with the next step or follow-up question. If it's incorrect, guide them."
 
                 try:
+                    # Add context message as user
                     session.chat_ctx.add_message(role="user", content=eval_text)
                     logger.info(">>> Injected code/output into LLM context.")
                 except Exception as ctx_err:
                     logger.error(f"Failed to update chat_ctx: {ctx_err}")
                 
                 # 3. Trigger Agent Response
-                if hasattr(session, 'say'):
-                    asyncio.create_task(session.say("I've received your code. Let me review it now.", allow_interruptions=True))
-                # Trigger response from LLM happens automatically? No, say() just speaks.
-                # To get LLM to THINK about it, we usually need session.response.generate() or similar.
-                # But typically VoicePipelineAgent auto-replies to user input. Since this is "data", it might not auto-trigger.
-                # Actually, session.say() is just TTS. We need the LLM to generate the NEXT turn based on the context update.
-                # However, standard VoicePipelineAgent doesn't have a public `generate_reply` method in all versions.
-                # Instead, we rely on the fact that if we `say` something, the turn is over? No.
-                # Let's try explicit `session.response.create()` if available or `session.llm.chat()`.
-                # Simplest fallback if we can't trigger generation: The user (candidate) will likely say "Check my code".
-                # BUT user said: "fix it so it goes to llm model".
-                # If we just append to context, it will be used in the NEXT turn.
-                # To force a turn, we might need to fake a user speech event?
-                # BETTER: Just rely on context injection. If the user stays silent, the agent won't speak.
-                # But `session.say` buys time.
-                # Let's just append to context for now as "Shortest Path" to ensure it's THERE.
+                # We need the LLM to actively think about the new context, not just TTS it.
+                try:
+                    logger.info(">>> Triggering AI evaluation of code submission...")
+                    async def trigger_eval():
+                        # Let user know AI is looking at it via TTS first
+                        if hasattr(session, 'say'):
+                            await session.say("I'm reviewing your code execution now.", allow_interruptions=False)
+                        
+                        try:
+                            # A synthetic request to standard groq_llm object to evaluate the current context
+                            prompt_ctx = session.chat_ctx.copy()
+                            
+                            # Safely append a user message as the final trigger to ensure Llama3 processes the context
+                            user_instruction = (
+                                "Look at the latest code execution logs above. "
+                                "If there is a Traceback/Error, IMMEDIATELY tell me what crashed in 1 sentence and ask me to fix it. "
+                                "If it succeeded, acknowledge it briefly and ask your next question. Speak concisely."
+                            )
+                            prompt_ctx.add_message(role="user", content=user_instruction)
+                            
+                            stream = session.llm.chat(chat_ctx=prompt_ctx)
+                            
+                            res_text = ""
+                            async for chunk in stream:
+                                # LiveKit abstractions use chunk.delta instead of OpenAI's chunk.choices array
+                                if hasattr(chunk, 'choices') and chunk.choices: # Fallback OpenAI native
+                                    if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                                        res_text += str(chunk.choices[0].delta.content)
+                                elif hasattr(chunk, 'delta') and chunk.delta and chunk.delta.content: # LiveKit native
+                                    res_text += str(chunk.delta.content)
+                            
+                            logger.info(f">>> Synthetic ALGO_SUBMIT LLM evaluation generated: {res_text}")
+                            
+                            # Push the response to audio via TTS say method (which also adds to context memory)
+                            if hasattr(session, 'say') and res_text:
+                                await session.say(res_text, allow_interruptions=True)
+                            elif hasattr(session, 'say'):
+                                await session.say("I've noticed your code output. Please explain your next steps.", allow_interruptions=True)
+                        except Exception as inner_e:
+                            logger.error(f"Failed synthetic code eval: {inner_e}")
+                            if hasattr(session, 'say'):
+                                await session.say("I've received your code. Please let me know what you think of the output.", allow_interruptions=True)
+                                
+                    asyncio.create_task(trigger_eval())
+                except Exception as eval_e:
+                     logger.error(f"Code Evaluation Trigger failed: {eval_e}") 
+            
+            elif msg_type == "USER_MESSAGE":
+                user_text = str(payload.get("text", "")).strip()
+                if not user_text:
+                    return
 
-                
+                logger.info(f">>> RECEIVED USER_MESSAGE ({len(user_text)} chars)")
+                audit_logger.log_event("Candidate", "TEXT_MESSAGE", user_text)
+
+                try:
+                    session.chat_ctx.add_message(role="user", content=user_text)
+                except Exception as ctx_err:
+                    logger.error(f"Failed to update chat_ctx for USER_MESSAGE: {ctx_err}")
+
+                async def trigger_user_reply():
+                    try:
+                        prompt_ctx = session.chat_ctx.copy()
+                        prompt_ctx.add_message(
+                            role="user",
+                            content="Respond concisely to the candidate's latest message and continue the interview."
+                        )
+                        stream = session.llm.chat(chat_ctx=prompt_ctx)
+
+                        res_text = ""
+                        async for chunk in stream:
+                            if hasattr(chunk, 'choices') and chunk.choices:
+                                if hasattr(chunk.choices[0].delta, 'content') and chunk.choices[0].delta.content:
+                                    res_text += str(chunk.choices[0].delta.content)
+                            elif hasattr(chunk, 'delta') and chunk.delta and chunk.delta.content:
+                                res_text += str(chunk.delta.content)
+
+                        if hasattr(session, 'say') and res_text.strip():
+                            await session.say(res_text.strip(), allow_interruptions=True)
+                        elif hasattr(session, 'say'):
+                            await session.say("I got your message. Please continue.", allow_interruptions=True)
+                    except Exception as reply_err:
+                        logger.error(f"USER_MESSAGE response generation failed: {reply_err}")
+
+                asyncio.create_task(trigger_user_reply())
         except Exception as e:
             logger.error(f"Error processing data packet: {e}")
             
@@ -612,8 +746,24 @@ async def my_agent(ctx: JobContext):
                 "timestamp": audit_logger._start_time.isoformat(),
                 "candidate_id": audit_logger.candidate_id,
                 "dqi_calculation": dqi_data,
-                "audit_log": audit_logs
+                "audit_log": audit_logs,
+                "role": (knowledge_engine.candidate_context.get('role') if knowledge_engine.candidate_context else None) or "Technical Engineer"
             }
+            
+            # [NEW] Load MediaPipe behavioral biometrics if available
+            try:
+                import json as _json
+                from pathlib import Path as _Path
+                clean_cid = str(audit_logger.candidate_id).replace("audit:", "").strip()
+                mp_path = _Path("uploads") / f"{clean_cid}_mediapipe.json"
+                if mp_path.exists():
+                    with open(mp_path, "r") as mp_f:
+                        raw_data["mediapipe_metrics"] = _json.load(mp_f)
+                    logger.info(f"Loaded MediaPipe metrics from {mp_path}")
+                else:
+                    logger.info("No MediaPipe metrics found — FSIR will generate without biometric data.")
+            except Exception as mp_err:
+                logger.warning(f"Failed to load MediaPipe metrics: {mp_err}")
             
             # Use Analysis Pipeline to generate Final Report
             print(f"--- Generating FSIR Report for {audit_logger.session_id} ---")
@@ -666,7 +816,7 @@ async def my_agent(ctx: JobContext):
                 print(f"PDF FAILURE: {pdf_err}")
             
             # [NEW] Save Questions Log
-            questions_filename = questions_logger.save_to_file()
+            questions_filename = questions_logger.save_to_file(f"uploads/questions_{questions_logger.candidate_name}.json")
             print(f"Questions log saved: {questions_filename}")
             
         except Exception as e:

@@ -3,10 +3,65 @@ Dynamic Question Generator
 Generates personalized interview questions based on candidate resume.
 """
 import logging
+import random
 import asyncio
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger("aegis.agents.question_generator")
+
+
+# Quick 1-liner conceptual questions by domain — used in Phase 3.5
+ONE_LINER_NON_CODING_QUESTIONS: Dict[str, List[str]] = {
+    "ai_ml": [
+        "What is the difference between overfitting and underfitting in 10 seconds?",
+        "Name one tradeoff between a decision tree and a neural network.",
+        "What does the learning rate control in gradient descent?",
+        "What is an embedding, and where would you use one?",
+        "What does 'attention' mean in a transformer model?",
+    ],
+    "backend": [
+        "What does idempotent mean in the context of REST APIs?",
+        "In one sentence: what is the difference between SQL and NoSQL?",
+        "What is a database index and when would you avoid using one?",
+        "What is the CAP theorem, and which trade-off would you choose for a payment system?",
+        "What is memoization and when is it not useful?",
+    ],
+    "devops": [
+        "What is the difference between a container and a virtual machine?",
+        "What does horizontal scaling mean vs vertical scaling?",
+        "What is a blue-green deployment strategy in one sentence?",
+        "What does the 'latest' Docker tag risk in production?",
+        "Name one disadvantage of a microservices architecture.",
+    ],
+    "cybersecurity": [
+        "What is the difference between authentication and authorization?",
+        "What does SQL injection exploit?",
+        "In one sentence: what is a man-in-the-middle attack?",
+        "Why is MD5 no longer suitable for password hashing?",
+        "What is the principle of least privilege?",
+    ],
+    "blockchain": [
+        "What makes a blockchain 'immutable'?",
+        "What is the difference between a public and private blockchain?",
+        "What is a smart contract in one sentence?",
+        "What is a 51% attack?",
+        "What does gas mean in Ethereum?",
+    ],
+    "frontend": [
+        "What is the difference between the DOM and the virtual DOM?",
+        "When would you use useCallback vs useMemo in React?",
+        "What is CORS and when does it become an issue?",
+        "What is the difference between CSS grid and flexbox?",
+        "What does 'code splitting' mean in a bundler?",
+    ],
+    "default": [
+        "What is the time complexity of binary search?",
+        "What is the difference between a stack and a queue?",
+        "When would you use a hash map over a sorted array?",
+        "Explain Big O notation in one sentence.",
+        "What is tail recursion?",
+    ]
+}
 
 
 def build_question_generation_prompt(candidate_context: Dict[str, Any]) -> str:
@@ -147,12 +202,14 @@ def _get_fallback_questions() -> List[str]:
     ]
 
 
-def format_questions_for_prompt(questions: List[str]) -> str:
+def format_questions_for_prompt(questions: List[str], field: str = "default") -> str:
     """
     Format questions for injection into agent system prompt.
+    Includes coding questions AND Phase 3.5 quick check-in questions.
     
     Args:
-        questions: List of question strings
+        questions: List of coding question strings
+        field: The candidate's detected field (for picking relevant one-liners)
         
     Returns:
         Formatted string for prompt injection
@@ -160,10 +217,15 @@ def format_questions_for_prompt(questions: List[str]) -> str:
     if not questions:
         return ""
     
+    # Pick 2 random one-liner questions for this field
+    field_key = field.lower().replace("/", "_") if field else "default"
+    pool = ONE_LINER_NON_CODING_QUESTIONS.get(field_key, ONE_LINER_NON_CODING_QUESTIONS["default"])
+    quick_checks = random.sample(pool, min(2, len(pool)))
+    
     lines = [
         "",
         "=== CANDIDATE-SPECIFIC QUESTIONS ===",
-        "Use these personalized questions during the interview:",
+        "Use these personalized coding questions during Phase 3 (one at a time):",
         ""
     ]
     
@@ -171,7 +233,16 @@ def format_questions_for_prompt(questions: List[str]) -> str:
         lines.append(f"{i}. {q}")
     
     lines.append("")
-    lines.append("Ask these naturally throughout the conversation, not all at once.")
+    lines.append("Ask these naturally, one per turn. Wait for the candidate's response before moving on.")
+    lines.append("================================")
+    
+    # Add Phase 3.5 quick check questions
+    lines.append("")
+    lines.append("=== QUICK CHECK QUESTIONS (Phase 3.5) ===")
+    lines.append("Ask ONE of these between every 2 coding questions. Keep it fast — verbal answer only, no IDE needed:")
+    lines.append("")
+    for i, q in enumerate(quick_checks, 1):
+        lines.append(f"QC{i}. {q}")
     lines.append("================================")
     
     return "\n".join(lines)

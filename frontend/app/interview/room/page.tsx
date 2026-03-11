@@ -27,6 +27,8 @@ import {
     useDataChannel
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
+import { MediaPipeOverlay } from "@/components/interview/MediaPipeOverlay";
+import { submitMediaPipeTelemetry } from "@/components/interview/TelemetrySubmitter";
 
 
 
@@ -282,7 +284,7 @@ const MonacoIDE = ({ onCodeSubmit }: { onCodeSubmit: (code: string, language: st
         }
     });
 
-    // Execute code via Piston API
+    // Execute code via Local API
     const executeCode = async () => {
         if (!code.trim() || isRunning) return;
 
@@ -292,9 +294,9 @@ const MonacoIDE = ({ onCodeSubmit }: { onCodeSubmit: (code: string, language: st
         const startTime = Date.now();
 
         try {
-            console.log(`[AEGIS] Executing ${selectedLang.name} code via Piston API...`);
+            console.log(`[AEGIS] Executing ${selectedLang.name} code via Local Execution Engine...`);
 
-            const response = await fetch('https://emkc.org/api/v2/piston/execute', {
+            const response = await fetch('/api/execute', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -304,13 +306,13 @@ const MonacoIDE = ({ onCodeSubmit }: { onCodeSubmit: (code: string, language: st
                 })
             });
 
-            if (!response.ok) throw new Error(`Piston API returned ${response.status}`);
+            if (!response.ok) throw new Error(`Execution API returned ${response.status}`);
 
             const result = await response.json();
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(2);
             setExecutionTime(`${elapsed}s`);
 
-            console.log('[AEGIS] Piston result:', result);
+            console.log('[AEGIS] Execution result:', result);
 
             if (result && result.run) {
                 const stdout = result.run.stdout || '';
@@ -328,11 +330,11 @@ const MonacoIDE = ({ onCodeSubmit }: { onCodeSubmit: (code: string, language: st
                 // Send to AI agent (Safe call)
                 onCodeSubmit(code, selectedLang.name, stdout || stderr);
             } else {
-                console.error('[AEGIS] Unexpected Piston response:', result);
+                console.error('[AEGIS] Unexpected execution response:', result);
                 setOutput('⚠️ Execution failed: Invalid response format.');
             }
         } catch (error) {
-            console.error('[AEGIS] Piston API error:', error);
+            console.error('[AEGIS] Execution API error:', error);
             setOutput(`⚠️ Execution error: ${error instanceof Error ? error.message : 'Unknown failure'}`);
         } finally {
             setIsRunning(false);
@@ -656,123 +658,131 @@ const TelemetryPanel = ({
                 </div>
             )}
 
-            <div className="p-4 border-b border-white/10 bg-gradient-to-r from-[#00E5FF]/5 to-transparent">
+            <div className="p-4 border-b border-white/10 bg-gradient-to-r from-[#00E5FF]/5 to-transparent shrink-0">
                 <div className="flex items-center gap-2">
                     <Activity className="w-5 h-5 text-[#00E5FF]" />
                     <span className="text-white font-mono text-sm font-bold tracking-widest">TELEMETRY_RADAR</span>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-zinc-800">
-                {/* Toggle Buttons for Terminal & Notepad */}
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => togglePanel("terminal")}
-                        className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 border rounded text-xs font-mono font-bold transition-all",
-                            activePanel === "terminal"
-                                ? "bg-[#00E5FF]/20 border-[#00E5FF] text-[#00E5FF]"
-                                : "bg-black/40 border-white/10 text-zinc-400 hover:border-[#00E5FF]/50 hover:text-[#00E5FF]"
-                        )}
-                    >
-                        <TerminalIcon className="w-3 h-3" />
-                        TERMINAL
-                    </button>
-                    <button
-                        onClick={() => togglePanel("notepad")}
-                        className={clsx(
-                            "flex-1 flex items-center justify-center gap-2 px-3 py-2 border rounded text-xs font-mono font-bold transition-all",
-                            activePanel === "notepad"
-                                ? "bg-yellow-500/20 border-yellow-500 text-yellow-400"
-                                : "bg-black/40 border-white/10 text-zinc-400 hover:border-yellow-500/50 hover:text-yellow-400"
-                        )}
-                    >
-                        <FileText className="w-3 h-3" />
-                        NOTEPAD
-                    </button>
+            {/* SCROLLABLE AREA: Everything else goes here */}
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-800">
+                {/* MediaPipe Camera Overlay */}
+                <div className="px-4 pt-4">
+                    <MediaPipeOverlay />
                 </div>
 
-                {/* Recruiter Takeover Section */}
-                <div className={clsx(
-                    "p-4 border rounded space-y-3",
-                    isRecruiterTakeover
-                        ? "border-amber-500/30 bg-amber-500/5"
-                        : "border-white/10 bg-black/40"
-                )}>
-                    <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
-                        <Crown className={clsx("w-3 h-3", isRecruiterTakeover ? "text-amber-400" : "text-zinc-500")} />
-                        <span className={isRecruiterTakeover ? "text-amber-400" : ""}>Recruiter Control</span>
+                <div className="p-4 space-y-4">
+                    {/* Toggle Buttons for Terminal & Notepad */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => togglePanel("terminal")}
+                            className={clsx(
+                                "flex-1 flex items-center justify-center gap-2 px-3 py-2 border rounded text-xs font-mono font-bold transition-all",
+                                activePanel === "terminal"
+                                    ? "bg-[#00E5FF]/20 border-[#00E5FF] text-[#00E5FF]"
+                                    : "bg-black/40 border-white/10 text-zinc-400 hover:border-[#00E5FF]/50 hover:text-[#00E5FF]"
+                            )}
+                        >
+                            <TerminalIcon className="w-3 h-3" />
+                            TERMINAL
+                        </button>
+                        <button
+                            onClick={() => togglePanel("notepad")}
+                            className={clsx(
+                                "flex-1 flex items-center justify-center gap-2 px-3 py-2 border rounded text-xs font-mono font-bold transition-all",
+                                activePanel === "notepad"
+                                    ? "bg-yellow-500/20 border-yellow-500 text-yellow-400"
+                                    : "bg-black/40 border-white/10 text-zinc-400 hover:border-yellow-500/50 hover:text-yellow-400"
+                            )}
+                        >
+                            <FileText className="w-3 h-3" />
+                            NOTEPAD
+                        </button>
                     </div>
 
-                    {isRecruiterTakeover ? (
-                        <div className="text-center py-2">
-                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/20 border border-amber-500/30 rounded-lg">
-                                <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-                                <span className="text-amber-400 font-mono text-xs font-bold">HUMAN MODE ACTIVE</span>
+                    {/* Recruiter Takeover Section */}
+                    <div className={clsx(
+                        "p-4 border rounded space-y-3",
+                        isRecruiterTakeover
+                            ? "border-amber-500/30 bg-amber-500/5"
+                            : "border-white/10 bg-black/40"
+                    )}>
+                        <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
+                            <Crown className={clsx("w-3 h-3", isRecruiterTakeover ? "text-amber-400" : "text-zinc-500")} />
+                            <span className={isRecruiterTakeover ? "text-amber-400" : ""}>Recruiter Control</span>
+                        </div>
+
+                        {isRecruiterTakeover ? (
+                            <div className="text-center py-2">
+                                <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+                                    <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                                    <span className="text-amber-400 font-mono text-xs font-bold">HUMAN MODE ACTIVE</span>
+                                </div>
+                                <p className="text-zinc-600 font-mono text-[10px] mt-2">AI interviewer paused</p>
                             </div>
-                            <p className="text-zinc-600 font-mono text-[10px] mt-2">AI interviewer paused</p>
+                        ) : (
+                            <RecruiterTakeoverControl onConfirm={() => setShowConfirmModal(true)} />
+                        )}
+                    </div>
+
+                    {/* System Stats */}
+                    <div className="p-4 border border-white/10 bg-black/40 rounded space-y-3">
+                        <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
+                            <Cpu className="w-3 h-3" />
+                            System Status
                         </div>
-                    ) : (
-                        <RecruiterTakeoverControl onConfirm={() => setShowConfirmModal(true)} />
-                    )}
-                </div>
-            </div>
-
-            {/* System Stats */}
-            <div className="p-4 border border-white/10 bg-black/40 rounded space-y-3">
-                <div className="text-zinc-500 font-mono text-xs uppercase tracking-widest border-b border-white/5 pb-2 flex items-center gap-2">
-                    <Cpu className="w-3 h-3" />
-                    System Status
-                </div>
-                <div className="space-y-2">
-                    <div className="flex justify-between items-center text-sm font-mono">
-                        <span className="text-zinc-500">ENCRYPTION</span>
-                        <span className="text-[#00E5FF] flex items-center gap-1">
-                            <Shield className="w-3 h-3" /> AES-256-GCM
-                        </span>
-                    </div>
-                    <div className="flex justify-between items-center text-sm font-mono">
-                        <span className="text-zinc-500">LATENCY</span>
-                        <span className="text-green-400">~24ms</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Hardware Override */}
-            <div className="border border-white/10 bg-black/40 rounded overflow-hidden flex-1 min-h-0">
-                <button
-                    onClick={() => setHardwareExpanded(!hardwareExpanded)}
-                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-colors"
-                >
-                    <div className="flex items-center gap-2">
-                        <Settings className="w-4 h-4 text-[#00E5FF]" />
-                        <span className="text-white font-mono text-xs font-bold tracking-wider">HARDWARE_OVERRIDE</span>
-                    </div>
-                    {hardwareExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
-                </button>
-                {hardwareExpanded && (
-                    <div className="p-4 space-y-4 border-t border-white/5 overflow-y-auto max-h-[200px]">
-                        {/* Audio */}
                         <div className="space-y-2">
-                            <label className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
-                                <Volume2 className="w-3 h-3" /> Audio Input
-                            </label>
-                            <select
-                                className="w-full bg-black border border-zinc-800 text-zinc-300 text-xs p-2.5 font-mono focus:border-[#00E5FF] outline-none rounded"
-                                onChange={(e) => audioDevices.setActiveMediaDevice(e.target.value)}
-                                value={audioDevices.activeDeviceId}
-                            >
-                                {audioDevices.devices.map((d) => (
-                                    <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Device'}</option>
-                                ))}
-                            </select>
+                            <div className="flex justify-between items-center text-sm font-mono">
+                                <span className="text-zinc-500">ENCRYPTION</span>
+                                <span className="text-[#00E5FF] flex items-center gap-1">
+                                    <Shield className="w-3 h-3" /> AES-256-GCM
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm font-mono">
+                                <span className="text-zinc-500">LATENCY</span>
+                                <span className="text-green-400">~24ms</span>
+                            </div>
                         </div>
                     </div>
-                )}
+
+                    {/* Hardware Override */}
+                    <div className="border border-white/10 bg-black/40 rounded overflow-hidden">
+                        <button
+                            onClick={() => setHardwareExpanded(!hardwareExpanded)}
+                            className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-colors"
+                        >
+                            <div className="flex items-center gap-2">
+                                <Settings className="w-4 h-4 text-[#00E5FF]" />
+                                <span className="text-white font-mono text-xs font-bold tracking-wider">HARDWARE_OVERRIDE</span>
+                            </div>
+                            {hardwareExpanded ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+                        </button>
+                        {hardwareExpanded && (
+                            <div className="p-4 space-y-4 border-t border-white/5 overflow-y-auto max-h-[200px]">
+                                {/* Audio */}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-mono text-zinc-500 uppercase flex items-center gap-2">
+                                        <Volume2 className="w-3 h-3" /> Audio Input
+                                    </label>
+                                    <select
+                                        className="w-full bg-black border border-zinc-800 text-zinc-300 text-xs p-2.5 font-mono focus:border-[#00E5FF] outline-none rounded"
+                                        onChange={(e) => audioDevices.setActiveMediaDevice(e.target.value)}
+                                        value={audioDevices.activeDeviceId}
+                                    >
+                                        {audioDevices.devices.map((d) => (
+                                            <option key={d.deviceId} value={d.deviceId}>{d.label || 'Unknown Device'}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </div>
 
-            {/* End Call */}
-            <div className="p-4 border-t border-white/10 bg-black/80 mt-auto">
+            {/* FIXED BOTTOM AREA: End Call */}
+            <div className="p-4 border-t border-white/10 bg-[#050508] shrink-0">
                 <button
                     onClick={onEndCall}
                     className="w-full group relative px-6 py-3 bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white transition-all rounded flex items-center justify-center gap-3 overflow-hidden"
@@ -855,8 +865,10 @@ const RoomContent = ({
     const [msgInput, setMsgInput] = useState("");
     const [activePanel, setActivePanel] = useState<ActivePanel>(null);
     const [isRecruiterTakeover, setIsRecruiterTakeover] = useState(false);
+    const messageSeqRef = useRef(0);
 
     const getTimestamp = () => new Date().toLocaleTimeString();
+    const nextMessageId = () => `${Date.now()}-${messageSeqRef.current++}-${Math.random().toString(36).slice(2, 7)}`;
 
     // LISTEN FOR TRANSCRIPTS (Explicit Room Event) - Utkarsh's approach
     const room = useRoomContext();
@@ -866,6 +878,10 @@ const RoomContent = ({
 
         const handleData = (payload: Uint8Array, participant?: any, kind?: any, topic?: string) => {
             try {
+                // [FIX] Skip LiveKit's built-in transcription packets — they duplicate
+                // our custom TRANSCRIPTION messages sent via on_agent_speech/on_user_speech
+                if (topic === "lk.transcription") return;
+
                 const text = new TextDecoder().decode(payload);
                 console.log("[RAW DATA]", text); // Debug Log
                 const data = JSON.parse(text);
@@ -874,26 +890,39 @@ const RoomContent = ({
                 // Check for both legacy "TRANSCRIPT" and new "TRANSCRIPTION" types
                 if (data.type === "TRANSCRIPT" || data.type === "TRANSCRIPTION") {
                     console.log("[TRANSCRIPT RX]", data.sender, data.text);
-                    setMessages(prev => [...prev, {
-                        id: Date.now().toString(),
-                        timestamp: getTimestamp(),
-                        sender: data.sender || "SYSTEM",
-                        text: data.text
-                    }]);
+                    setMessages(prev => {
+                        // [FIX] Deduplicate consecutive identical messages
+                        const lastMsg = prev[prev.length - 1];
+                        if (lastMsg && lastMsg.sender === data.sender && lastMsg.text === data.text) {
+                            return prev; // Ignore duplicate
+                        }
+                        return [...prev, {
+                            id: nextMessageId(),
+                            timestamp: getTimestamp(),
+                            sender: data.sender || "SYSTEM",
+                            text: data.text
+                        }];
+                    });
+                }
+
+                // [BUG FIX] Dispatch Mole popup via CustomEvent so Mole component can show it
+                if (data.type === "MOLE_POPUP") {
+                    console.log("[MOLE POPUP RX]", data.text);
+                    window.dispatchEvent(new CustomEvent('mole-message', { detail: data.text }));
                 }
 
                 // Listen for INTERVIEW_END signal from backend
                 if (data.type === "INTERVIEW_END") {
                     console.log("[AEGIS] Interview ended signal received:", data.reason);
                     setMessages(prev => [...prev, {
-                        id: Date.now().toString(),
+                        id: nextMessageId(),
                         timestamp: getTimestamp(),
                         sender: "SYSTEM",
                         text: `📋 Interview completed: ${data.reason || "Session ended"}. FSIR Report is being generated...`
                     }]);
                     // Delay to allow backend to generate report
                     setTimeout(() => {
-                        onInterviewEnd();
+                        onEndCall();
                     }, 2000);
                 }
                 // HISTORY SYNC (P2P)
@@ -914,9 +943,21 @@ const RoomContent = ({
                 if (data.type === "HISTORY_SYNC") {
                     if (!hasSyncedHistory && data.history && Array.isArray(data.history)) {
                         console.log("[AEGIS] Received History Sync:", data.history.length, "messages");
-                        // Merge unique messages or just replace? Replace is safer for a full sync.
-                        // But keep our local system init if needed. Let's trust the sync.
-                        setMessages(data.history);
+                        const seen = new Set<string>();
+                        const normalized = data.history.map((entry: { id?: string; timestamp?: string; sender?: string; text?: string }, idx: number) => {
+                            let id = String(entry?.id || `history-${idx}`);
+                            while (seen.has(id)) {
+                                id = `${id}-${idx}`;
+                            }
+                            seen.add(id);
+                            return {
+                                id,
+                                timestamp: String(entry?.timestamp || getTimestamp()),
+                                sender: entry?.sender || "SYSTEM",
+                                text: String(entry?.text || "")
+                            } as Message;
+                        });
+                        setMessages(normalized);
                         setHasSyncedHistory(true);
                     }
                 }
@@ -948,13 +989,23 @@ const RoomContent = ({
     const handleSendMessage = (e: React.FormEvent) => {
         e.preventDefault();
         if (!msgInput.trim()) return;
+        const userText = msgInput.trim();
         setMessages(prev => [...prev, {
-            id: Date.now().toString(),
+            id: nextMessageId(),
             timestamp: getTimestamp(),
             sender: "YOU",
-            text: msgInput
+            text: userText
         }]);
         setMsgInput("");
+
+        // Send typed text to backend agent so it can respond in voice/text.
+        if (room && room.localParticipant) {
+            const payload = JSON.stringify({ type: "USER_MESSAGE", text: userText });
+            const encoder = new TextEncoder();
+            room.localParticipant.publishData(encoder.encode(payload), { reliable: true }).catch((err) => {
+                console.error("[AEGIS] Failed to publish USER_MESSAGE:", err);
+            });
+        }
     };
 
     const handleCodeSubmit = async (code: string, language?: string, output?: string) => {
@@ -974,7 +1025,7 @@ const RoomContent = ({
 
             // 2. Update Local Log (Use truncated for display)
             setMessages(prev => [...prev, {
-                id: Date.now().toString(),
+                id: nextMessageId(),
                 timestamp: getTimestamp(),
                 sender: "CODE",
                 text: `[${language || 'CODE'}]\n${safeCode}${safeOutput ? `\n\n→ Output: ${safeOutput}` : ''}`
@@ -995,7 +1046,7 @@ const RoomContent = ({
         } catch (err) {
             console.error('[AEGIS] handleCodeSubmit CRASH PREVENTED:', err);
             setMessages(prev => [...prev, {
-                id: Date.now().toString(),
+                id: nextMessageId(),
                 timestamp: getTimestamp(),
                 sender: "SYSTEM",
                 text: `⚠️ Submission Error: ${err instanceof Error ? err.message : 'Unknown error'}`
@@ -1007,7 +1058,7 @@ const RoomContent = ({
         setIsRecruiterTakeover(true);
         // Add system message about takeover
         setMessages(prev => [...prev, {
-            id: Date.now().toString(),
+            id: nextMessageId(),
             timestamp: getTimestamp(),
             sender: "SYSTEM",
             text: "⚠️ RECRUITER TAKEOVER: Human interviewer has taken control. AI is now paused."
@@ -1097,17 +1148,18 @@ const RoomContent = ({
 // ============================================
 // MAIN PAGE (Wrapper) - Using Utkarsh's approach
 // ============================================
-export default function InterviewRoomPage() {
+function InterviewRoomContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [token, setToken] = useState("");
     const [isSessionEnded, setIsSessionEnded] = useState(false);
     const [isRecruiterMode, setIsRecruiterMode] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const tokenFetchedRef = useRef(false); // Guard against React Strict Mode double-dispatch
 
     // Get candidate ID from URL params (passed from dashboard after starting interview)
     const candidateId = searchParams.get('candidate') || 'unknown';
-    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+    const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
     // Function to download FSIR report from Utkarsh's backend
     const handleDownloadReport = async () => {
@@ -1138,10 +1190,8 @@ export default function InterviewRoomPage() {
             const a = document.createElement('a');
             a.href = url;
             a.download = `Aegis_Report_${candidateId}.pdf`;
-            document.body.appendChild(a);
             a.click();
             window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
 
             console.log("[AEGIS] FSIR report downloaded successfully");
         } catch (error) {
@@ -1165,6 +1215,10 @@ export default function InterviewRoomPage() {
     ];
 
     useEffect(() => {
+        // [FIX] Prevent double-dispatch in React Strict Mode (dev renders twice)
+        if (tokenFetchedRef.current) return;
+        tokenFetchedRef.current = true;
+
         const fetchToken = async () => {
             try {
                 // Use 'room' param from URL, or fallback to timestamp
@@ -1174,9 +1228,9 @@ export default function InterviewRoomPage() {
                 const uniqueRoom = roomParam || `aegis-${Date.now()}`;
                 const username = roleParam === 'recruiter' ? `recruiter-${Date.now()}` : 'candidate';
 
-                console.log("[AEGIS] Joining Room:", uniqueRoom, "as", username);
+                console.log("[AEGIS] Joining Room:", uniqueRoom, "as", username, "candidateId:", candidateId);
 
-                const resp = await fetch(`/api/livekit/token?room=${uniqueRoom}&username=${username}`);
+                const resp = await fetch(`/api/livekit/token?room=${uniqueRoom}&username=${username}&candidate=${candidateId}`);
                 const data = await resp.json();
                 setToken(data.token);
             } catch (e) {
@@ -1188,6 +1242,12 @@ export default function InterviewRoomPage() {
 
     const handleEndCall = async () => {
         setIsSessionEnded(true);
+
+        // Submitting MediaPipe Biometrics before backend stops processing
+        const roomParam = searchParams.get('room');
+        const uniqueRoom = roomParam || `aegis-unknown`; 
+        await submitMediaPipeTelemetry(uniqueRoom, candidateId);
+
         // Notify backend to stop recording/processing and generate report
         try {
             console.log("[AEGIS] Sending Stop Signal to Backend...");
@@ -1329,43 +1389,25 @@ export default function InterviewRoomPage() {
                     ) : (
                         // CANDIDATE VIEW - Session Ended
                         <div className="max-w-md mx-auto text-center">
-                            <div className="text-red-500 font-mono text-2xl tracking-[0.2em] animate-pulse mb-4">
-                                SESSION TERMINATED
+                            <div className="text-[#00E5FF] font-mono text-xl tracking-[0.2em] mb-4">
+                                SESSION CONCLUDED
                             </div>
-                            <div className="text-zinc-500 font-mono text-sm mb-8">
-                                The neural link has been severed. Report generation is in progress.
+                            <div className="text-zinc-400 font-mono text-sm mb-8 leading-relaxed">
+                                The interview has successfully ended. Aegis is now generating your personalized feedback report.
                             </div>
 
                             <button
-                                onClick={handleDownloadReport}
-                                disabled={isDownloading}
-                                className="px-8 py-3 bg-[#00E5FF] text-black font-mono font-bold tracking-wider hover:bg-[#00E5FF]/80 transition-all rounded shadow-[0_0_20px_rgba(0,229,255,0.3)] flex items-center gap-2 mx-auto mb-6 disabled:opacity-50 disabled:cursor-not-allowed"
+                                onClick={() => window.open(`${API_BASE}/download-feedback/${candidateId}`, "_blank")}
+                                className="px-8 py-3 bg-[#00E5FF] text-black font-mono font-bold tracking-wider hover:bg-[#00E5FF]/80 transition-all rounded shadow-[0_0_20px_rgba(0,229,255,0.3)] flex items-center gap-2 mx-auto mb-6"
                             >
-                                {isDownloading ? (
-                                    <>
-                                        <Loader2 className="w-5 h-5 animate-spin" />
-                                        DOWNLOADING...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Download className="w-5 h-5" />
-                                        DOWNLOAD FSIR REPORT
-                                    </>
-                                )}
+                                VIEW MY FEEDBACK
                             </button>
 
-                            <button
-                                onClick={() => window.location.reload()}
-                                className="text-zinc-600 font-mono text-xs hover:text-white transition-colors"
-                            >
-                                [ RE-INITIALIZE LINK ]
-                            </button>
-
-                            {/* Hint to switch to recruiter mode */}
+                            {/* Hint for recruiters to switch modes */}
                             <div className="mt-12 p-4 border border-dashed border-amber-500/30 rounded-lg">
-                                <p className="text-zinc-600 font-mono text-xs mb-2">For Judges / Recruiters:</p>
+                                <p className="text-zinc-600 font-mono text-xs mb-2">For Recruiters / Judges:</p>
                                 <p className="text-amber-400/80 font-mono text-xs">
-                                    Click "SWITCH TO RECRUITER" in the top right to view transcription
+                                    Click "SWITCH TO RECRUITER" in the top right to view the technical transcription and FSIR.
                                 </p>
                             </div>
                         </div>
@@ -1395,10 +1437,23 @@ export default function InterviewRoomPage() {
             className="h-full w-full"
         >
             <RoomContent
-                onEndCall={() => setIsSessionEnded(true)}
+                onEndCall={handleEndCall}
                 candidateId={candidateId}
                 onInterviewEnd={() => setIsSessionEnded(true)}
             />
         </LiveKitRoom>
+    );
+}
+
+export default function InterviewRoomPage() {
+    return (
+        <React.Suspense fallback={
+            <div className="h-screen w-screen bg-[#050508] flex flex-col items-center justify-center gap-4">
+                <Loader2 className="w-10 h-10 text-[#00E5FF] animate-spin" />
+                <div className="text-[#00E5FF] font-mono text-sm tracking-[0.2em] animate-pulse">LOADING SECURE PROTOCOL...</div>
+            </div>
+        }>
+            <InterviewRoomContent />
+        </React.Suspense>
     );
 }

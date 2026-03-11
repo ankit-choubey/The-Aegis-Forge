@@ -27,8 +27,14 @@ export async function GET(req: NextRequest) {
     try {
         if (livekitUrl) {
             const dispatchClient = new AgentDispatchClient(livekitUrl, apiKey, apiSecret);
-            await dispatchClient.createDispatch(room, 'aegis-interviewer');
-            console.log(`[Token API] Dispatched aegis-interviewer to room: ${room}`);
+            const candidateParam = req.nextUrl.searchParams.get('candidate');
+            let metadataStr = "";
+            if (candidateParam && candidateParam !== 'unknown') {
+                metadataStr = `audit:${candidateParam}:uploads/${candidateParam}_audit.json`;
+            }
+            
+            await dispatchClient.createDispatch(room, 'aegis-interviewer', { metadata: metadataStr });
+            console.log(`[Token API] Dispatched aegis-interviewer to room: ${room} with metadata: ${metadataStr}`);
         }
     } catch (dispatchError) {
         console.error('[Token API] Agent dispatch failed:', dispatchError);

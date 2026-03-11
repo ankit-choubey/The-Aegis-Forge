@@ -2,12 +2,16 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
+from app.analysis.schemas import MediaPipeMetrics
 import uuid
 import logging
 import os
 import shutil
 import io # <--- Added
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=".env")
 
 # IMPORTS (The Trinity)
 from backend.core.state import get_initial_state
@@ -63,6 +67,7 @@ class FocusTopicsRequest(BaseModel):
 # IN-MEMORY SESSION STORE
 active_sessions = {}
 candidate_audits = {}  # Store audits by candidate_id
+mediapipe_store = {}   # Store MediaPipe metrics by candidate_id
 
 # --- ENDPOINTS ---
 
@@ -91,7 +96,7 @@ async def upload_resume(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted")
     
     # Generate candidate ID
-    candidate_id = str(uuid.uuid4())[:8]
+    candidate_id = uuid.uuid4().hex[:8]
     
     # Save uploaded file
     pdf_path = UPLOADS_DIR / f"{candidate_id}_{file.filename}"
@@ -138,10 +143,38 @@ async def upload_resume(file: UploadFile = File(...)):
     audit["dynamic_market_intel"] = market_intel
     save_audit(audit, str(audit_path))
     
-    logger.info(f">>> Resume validated. Candidate: {candidate_id}, Field: {field}")
+    # Generate random password for candidate
+    import random
+    import string
+    import json
+    password = ''.join(random.choices(string.ascii_letters + string.digits, k=8))
+    
+    # Save to local db
+    db_path = UPLOADS_DIR / "db.json"
+    db_data: dict[str, Any] = {}
+    if db_path.exists():
+        try:
+            with open(db_path, "r") as f:
+                content = json.load(f)
+                if isinstance(content, dict):
+                    db_data = content
+        except:
+            pass
+            
+    db_data[candidate_id] = {
+        "password": password,
+        "audit_path": str(audit_path),
+        "status": "PENDING"
+    }
+    
+    with open(db_path, "w") as f:
+        json.dump(db_data, f)
+    
+    logger.info(f">>> Resume validated. Candidate: {candidate_id}, Password generated.")
     
     return {
         "candidate_id": candidate_id,
+        "password": password,
         "detected_field": field,
         "scenario": context['scenario_id'],
         "trust_score": audit['summary']['trust_score'],
@@ -186,8 +219,8 @@ async def start_interview_session(request: InterviewStartRequest):
         can_subscribe=True
     )
     
-    # Dispatch agent with audit path as metadata
-    audit_metadata = f"audit:{candidate_data['audit_path']}"
+    # Dispatch agent with audit path and candidate_id as metadata
+    audit_metadata = f"audit:{candidate_id}:{candidate_data['audit_path']}"
     
     dispatch_result = await dispatcher.dispatch_agent(
         room_name=room_name,
@@ -315,18 +348,212 @@ async def set_candidate_role(request: RoleUpdateRequest):
     
     logger.info(f">>> [ROLE OVERRIDE] Candidate {candidate_id} switched to {role} ({scenario_id})")
     
-    return {
-        "status": "success",
-        "candidate_id": candidate_id,
-        "new_role": role,
-        "new_scenario": scenario_id
-    }
-
-
 # ...
 from fastapi.responses import StreamingResponse, FileResponse
 from app.analysis.pipeline import InterviewPipeline
 from app.analysis.pdf_generator import PDFReportGenerator
+
+class LoginRequest(BaseModel):
+    candidate_id: str
+    password: str
+
+@app.post("/candidate-login")
+async def candidate_login(request: LoginRequest):
+    """
+    Authenticate a candidate using their ID and auto-generated password.
+    """
+    import json
+    db_path = UPLOADS_DIR / "db.json"
+    
+    if not db_path.exists():
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    try:
+        with open(db_path, "r") as f:
+            db_data = json.load(f)
+    except:
+        raise HTTPException(status_code=500, detail="Database error")
+        
+    if request.candidate_id not in db_data:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    candidate_info = db_data[request.candidate_id]
+    
+    if candidate_info["password"] != request.password:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+        
+    # Re-hydrate memory store if needed
+    if request.candidate_id not in candidate_audits:
+        try:
+            with open(candidate_info["audit_path"], "r") as f:
+                audit = json.load(f)
+                
+            from app.resume.loader import detect_candidate_field, extract_candidate_context
+            field = detect_candidate_field(audit)
+            context = extract_candidate_context(audit)
+            
+            candidate_audits[request.candidate_id] = {
+                "audit": audit,
+                "audit_path": candidate_info["audit_path"],
+                "field": field,
+                "scenario_id": context['scenario_id'],
+                "context": context
+            }
+        except Exception as e:
+            logger.error(f"Failed to hydrate memory for {request.candidate_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to load session data")
+            
+    return {"status": "success", "message": "Authenticated"}
+
+@app.get("/interview-results/{candidate_id}")
+async def get_interview_results(candidate_id: str):
+    """
+    Fetch paths to the FSIR and Q&A JSON for a recruiter.
+    """
+    import json
+    db_path = UPLOADS_DIR / "db.json"
+    
+    if db_path.exists():
+        try:
+            with open(db_path, "r") as f:
+                db_data = json.load(f)
+            
+            if candidate_id in db_data:
+                # Assuming status update logic is handled elsewhere, e.g., in a webhook or cleanup method
+                if db_data[candidate_id]["status"] == "COMPLETED":
+                     return {
+                        "fsir_url": f"/download-report/{candidate_id}",
+                        "qna_json_url": f"/download-qna/{candidate_id}",
+                        "status": "COMPLETED"
+                     }
+        except Exception as e:
+             logger.error(f"Failed to read db: {e}")
+             
+    # Try finding files directly if DB misses it
+    fsir_path = _resolve_candidate_artifact("fsir", ".pdf", candidate_id)
+    if fsir_path:
+        return {
+            "fsir_url": f"/download-report/{candidate_id}",
+            "qna_json_url": f"/download-qna/{candidate_id}",
+            "status": "COMPLETED"
+        }
+        
+    return {"status": "PENDING", "message": "Interview hasn't finished yet or data is not ready."}
+
+
+def _candidate_id_variants(candidate_id: str) -> List[str]:
+    variants: List[str] = []
+    raw = (candidate_id or "").strip()
+    for value in (raw, raw.replace("audit:", "").strip()):
+        if value and value not in variants:
+            variants.append(value)
+    if raw.startswith("audit:"):
+        parts = raw.split(":", 2)
+        if len(parts) >= 2 and parts[1] and parts[1] not in variants:
+            variants.append(parts[1])
+    return variants
+
+
+def _uploads_roots() -> List[Path]:
+    roots: List[Path] = []
+    for path in (UPLOADS_DIR, Path("uploads"), Path(__file__).resolve().parents[1] / "uploads"):
+        resolved = path.resolve()
+        if resolved not in roots:
+            roots.append(resolved)
+    return roots
+
+
+def _candidate_name_from_audit(candidate_id: str) -> Optional[str]:
+    import json
+
+    id_variants = _candidate_id_variants(candidate_id)
+    for uploads_root in _uploads_roots():
+        db_path = uploads_root / "db.json"
+        if not db_path.exists():
+            continue
+        try:
+            with open(db_path, "r") as f:
+                db_data = json.load(f)
+            for cid in id_variants:
+                info = db_data.get(cid)
+                if not info:
+                    continue
+                raw_audit_path = Path(info.get("audit_path", ""))
+                candidate_paths: List[Path] = []
+                if raw_audit_path.is_absolute():
+                    candidate_paths.append(raw_audit_path)
+                else:
+                    candidate_paths.extend(
+                        [
+                            uploads_root / raw_audit_path,
+                            Path.cwd() / raw_audit_path,
+                            Path(__file__).resolve().parents[1] / raw_audit_path,
+                        ]
+                    )
+                audit_path = next((p for p in candidate_paths if p.exists()), None)
+                if not audit_path:
+                    continue
+                with open(audit_path, "r") as af:
+                    audit_data = json.load(af)
+                name = str(audit_data.get("contact_details", {}).get("name", "")).strip()
+                if name:
+                    return name
+        except Exception as e:
+            logger.warning(f"Failed candidate-name lookup for {candidate_id}: {e}")
+    return None
+
+
+def _resolve_candidate_artifact(prefix: str, suffix: str, candidate_id: str) -> Optional[Path]:
+    tokens = _candidate_id_variants(candidate_id)
+    candidate_name = _candidate_name_from_audit(candidate_id)
+    if candidate_name and candidate_name not in tokens:
+        tokens.append(candidate_name)
+
+    search_roots: List[Path] = []
+    for root in (Path.cwd(), Path(__file__).resolve().parents[1], *_uploads_roots()):
+        resolved = root.resolve()
+        if resolved not in search_roots:
+            search_roots.append(resolved)
+
+    for token in tokens:
+        filename = f"{prefix}_{token}{suffix}"
+        for root in search_roots:
+            candidate_path = root / filename
+            if candidate_path.exists():
+                return candidate_path
+    return None
+
+@app.get("/download-feedback/{candidate_id}")
+async def download_feedback(candidate_id: str):
+    """
+    Download the candidate-facing feedback PDF.
+    """
+    filename = f"feedback_{candidate_id}.pdf"
+    file_path = UPLOADS_DIR / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Feedback report not ready. Please wait for interview to finish.")
+    
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=filename
+    )
+
+@app.get("/download-qna/{candidate_id}")
+async def download_qna(candidate_id: str):
+    """
+    Download the raw Q&A JSON. (Assuming it gets saved here by the agents process)
+    """
+    final_path = _resolve_candidate_artifact("questions", ".json", candidate_id)
+    if not final_path:
+        raise HTTPException(status_code=404, detail="Q&A data not found.")
+        
+    return FileResponse(
+        path=final_path,
+        media_type="application/json",
+        filename=f"questions_{candidate_id}.json"
+    )
 
 @app.get("/candidate/{candidate_id}")
 async def get_candidate(candidate_id: str):
@@ -343,29 +570,9 @@ async def download_report(candidate_id: str):
     Download the PRE-GENERATED PDF report for a candidate.
     (Generated by the Agent Process at the end of the interview)
     """
-    # 1. Try to find the file
-    filename = f"fsir_{candidate_id}.pdf"
-    file_path = Path(filename)
-    
-    # Also check uploads text
-    uploads_path = UPLOADS_DIR / filename
-    
-    final_path = None
-    if file_path.exists():
-        final_path = file_path
-    elif uploads_path.exists():
-        final_path = uploads_path
-        
+    final_path = _resolve_candidate_artifact("fsir", ".pdf", candidate_id)
     if not final_path:
         logger.warning(f"Report not found for {candidate_id}. It might not be generated yet.")
-        # [FALLBACK] For Dev/Testing, check if there are ANY pdfs to serve? No, 404 is stricter.
-        # But user mentioned "we get a pdf", implies it exists.
-        
-        # Check if we can fallback to session-based naming if we knew the session?
-        # For now, return 404 but with helpful message
-        
-        # [DEV HACK] If dev mode, return dummy if real one missing?
-        # No, better to be honest.
         raise HTTPException(status_code=404, detail="Report not ready. Please wait for interview to finish.")
     
     return FileResponse(
@@ -430,6 +637,56 @@ async def list_sessions():
         "sessions": list(active_sessions.keys())
     }
 
+@app.get("/candidates")
+async def get_all_candidates():
+    """Return all candidates for the recruiter dashboard."""
+    import json
+    db_path = UPLOADS_DIR / "db.json"
+    candidates = []
+    
+    if db_path.exists():
+        try:
+            with open(db_path, "r") as f:
+                db_data = json.load(f)
+                
+            for cid, info in db_data.items():
+                name = "Unknown"
+                role = "Unknown"
+                score = "N/A"
+                
+                # First check memory
+                if cid in candidate_audits:
+                    audit = candidate_audits[cid].get('audit', {})
+                    if isinstance(audit, dict):
+                        name = audit.get('contact_details', {}).get('name', 'Unknown')
+                        score = audit.get('summary', {}).get('trust_score', 'N/A')
+                    role = candidate_audits[cid].get('field', 'Unknown')
+                # Fallback to reading the audit file from disk
+                elif "audit_path" in info and Path(info["audit_path"]).exists():
+                    try:
+                        with open(info["audit_path"], "r") as af:
+                            audit_data = json.load(af)
+                        name = audit_data.get('contact_details', {}).get('name', 'Unknown')
+                        score = audit_data.get('summary', {}).get('trust_score', 'N/A')
+                        role = detect_candidate_field(audit_data) # use the imported detector
+                        # Repopulate memory cache
+                        candidate_audits[cid] = {'audit': audit_data, 'field': role}
+                    except Exception as parse_error:
+                        logger.error(f"Failed to read audit for {cid}: {parse_error}")
+                
+                candidates.append({
+                    "id": cid,
+                    "name": name,
+                    "status": info.get("status", "PENDING"),
+                    "role": role,
+                    "score": score
+                })
+        except Exception as e:
+            logger.error(f"Failed loading candidates: {e}")
+            pass
+            
+    return {"candidates": candidates}
+
 @app.get("/aegis/session/{session_id}")
 async def get_session(session_id: str):
     """Get details of a specific session."""
@@ -444,3 +701,134 @@ async def get_session(session_id: str):
     }
 
 # Run with: uvicorn backend.main:app --reload --port 8000
+
+# ============================================
+# MediaPipe Behavioral Biometrics Endpoint
+# ============================================
+
+@app.post("/mediapipe-metrics")
+async def receive_mediapipe_metrics(metrics: MediaPipeMetrics):
+    """
+    Receive MediaPipe behavioral biometrics from the frontend.
+    The frontend should call this endpoint periodically or at interview end
+    with the full MediaPipeMetrics payload.
+    
+    CONTRACT:
+    - session_id must match the LiveKit room/session ID
+    - candidate_id must match the candidate_id from /upload-resume
+    """
+    candidate_id = metrics.candidate_id
+    
+    # Store (overwrite if called multiple times — last write wins)
+    mediapipe_store[candidate_id] = metrics.model_dump()
+    
+    # Also save to disk for persistence
+    mp_path = UPLOADS_DIR / f"{candidate_id}_mediapipe.json"
+    try:
+        import json
+        with open(mp_path, "w") as f:
+            json.dump(metrics.model_dump(), f, indent=2)
+        logger.info(f">>> MediaPipe metrics saved: {mp_path}")
+    except Exception as e:
+        logger.error(f"Failed to save MediaPipe metrics: {e}")
+    
+    return {
+        "status": "ok",
+        "message": f"MediaPipe metrics received for candidate {candidate_id}",
+        "scores": {
+            "confidence": metrics.overall_confidence_score,
+            "engagement": metrics.overall_engagement_score,
+            "authenticity": metrics.authenticity_score
+        }
+    }
+
+@app.get("/mediapipe-metrics/{candidate_id}")
+async def get_mediapipe_metrics(candidate_id: str):
+    """
+    Retrieve stored MediaPipe metrics for a candidate.
+    Used internally by the FSIR pipeline.
+    """
+    # Check memory first
+    if candidate_id in mediapipe_store:
+        return mediapipe_store[candidate_id]
+    
+    # Fallback: check disk
+    mp_path = UPLOADS_DIR / f"{candidate_id}_mediapipe.json"
+    if mp_path.exists():
+        import json
+        with open(mp_path, "r") as f:
+            data = json.load(f)
+        mediapipe_store[candidate_id] = data  # Cache it
+        return data
+    
+    raise HTTPException(status_code=404, detail=f"No MediaPipe data found for candidate {candidate_id}")
+
+
+class StopInterviewRequest(BaseModel):
+    candidate_id: str
+
+@app.post("/stop-interview")
+async def stop_interview(request: StopInterviewRequest):
+    """
+    Handle the end of an interview from the frontend.
+    Generates Candidate-Facing Feedback Report and updates status.
+    """
+    candidate_id = request.candidate_id
+    logger.info(f">>> [STOP-INTERVIEW] Received end signal for {candidate_id}")
+
+    try:
+        # Load necessary data to generate feedback
+        # 1. Audit Log & Candidate Context
+        audit_path = ""
+        db_path = UPLOADS_DIR / "db.json"
+        
+        import json
+        if db_path.exists():
+            with open(db_path, "r") as f:
+                db_data = json.load(f)
+                
+            if candidate_id in db_data:
+                 audit_path = db_data[candidate_id].get("audit_path", "")
+        
+        # We need the audit log to generate the detailed FSIR if it hasn't been done yet
+        # But mostly we need it to generate the Candidate Feedback
+        try:
+            feedback_text = (
+                "Thank you for completing the interview! You demonstrated strong "
+                "problem-solving skills and handled questions well. We noticed some "
+                "areas for growth in system design concepts. Keep up the good work!"
+            )
+
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+
+            feedback_filename = UPLOADS_DIR / f"feedback_{candidate_id}.pdf"
+            c = canvas.Canvas(str(feedback_filename), pagesize=letter)
+            c.drawString(100, 750, "Interview Feedback Report")
+            c.drawString(100, 730, f"Candidate ID: {candidate_id}")
+            c.drawString(100, 700, feedback_text)
+            c.save()
+
+            logger.info(f">>> Feedback generated: {feedback_filename}")
+
+        except Exception as e:
+            logger.error(f">>> Failed to generate feedback PDF: {e}")
+             
+        # Finally, update the status in db.json so frontend knows it's ready
+        if db_path.exists():
+             with open(db_path, "r") as f:
+                 db_data = json.load(f)
+                 
+             if candidate_id in db_data:
+                 db_data[candidate_id]["status"] = "COMPLETED"
+                 
+                 with open(db_path, "w") as f:
+                     json.dump(db_data, f, indent=4)
+                     
+                 logger.info(f">>> Marked session {candidate_id} as COMPLETED")
+                 
+        return {"status": "success", "message": "Interview stopped and feedback generated."}
+        
+    except Exception as e:
+        logger.error(f"Failed to process stop interview: {e}")
+        raise HTTPException(status_code=500, detail="Failed to stop the interview and process reports.")

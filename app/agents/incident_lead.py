@@ -70,6 +70,10 @@ class IncidentLead(Agent, AegisAgentBase):
                     elif isinstance(raw_projects, str) and raw_projects:
                         projects_str = raw_projects
 
+                # Save as instance vars so await_dynamic_questions can reuse them
+                self._cand_name = cand_name
+                self._cand_role = cand_role
+
                 # Scripting the Flow
                 if projects_str == "your recent projects":
                      # Fallback if no specific projects found
@@ -98,10 +102,10 @@ class IncidentLead(Agent, AegisAgentBase):
                 if 'raw_text' in safe_context:
                     del safe_context['raw_text']
                 
-                # Convert to string and truncate safely to ~1500 chars (approx 400-500 tokens)
+                # Convert to string and truncate safely to ~3000 chars
                 candidate_json_str = json.dumps(safe_context, default=str)
-                if len(candidate_json_str) > 1500:
-                    candidate_json_str = candidate_json_str[:1500] + "... (truncated)"
+                if len(candidate_json_str) > 3000:
+                    candidate_json_str = candidate_json_str[:3000] + "... (truncated)"
                 
                 # Inject scripts into context for the Prompt to use
                 enhanced_context = (
@@ -121,6 +125,9 @@ class IncidentLead(Agent, AegisAgentBase):
             else:
                 enhanced_context = f"{scenario.context}\n\n{market_intel}"
                 cand_role = "Backend Engineer" # Default fallback
+                # Store instance vars with defaults when no candidate context
+                self._cand_name = cand_name
+                self._cand_role = cand_role
                 
             self.context = enhanced_context
             
@@ -195,12 +202,16 @@ class IncidentLead(Agent, AegisAgentBase):
                 if questions:
                     self.dynamic_questions = questions
                     
+                    # [BUG FIX] Use stored instance vars instead of hardcoded defaults
+                    candidate_name = getattr(self, '_cand_name', 'Candidate')
+                    job_role = getattr(self, '_cand_role', 'Backend Engineer')
+                    
                     # Re-build System Prompt with new questions
                     sys_prompt = self._build_system_prompt(
                         INCIDENT_LEAD_SYSTEM, 
                         initial_problem=self.initial_problem,
-                        candidate_name="Candidate", # Re-fetch name if possible/needed or store in self
-                        job_role="Backend Engineer" # Re-fetch role
+                        candidate_name=candidate_name,
+                        job_role=job_role
                     )
                     
                     # Format and append
@@ -212,7 +223,7 @@ class IncidentLead(Agent, AegisAgentBase):
                     # LiveKit Agents ChatContext is a list of ChatMessage
                     if self.chat_ctx.messages and self.chat_ctx.messages[0].role == "system":
                          self.chat_ctx.messages[0].content = final_prompt
-                         logger.info(">>> System Prompt UPDATED with Dynamic Questions.")
+                         logger.info(f">>> System Prompt UPDATED with Dynamic Questions (name={candidate_name}, role={job_role}).")
                     else:
                          self.chat_ctx.messages.insert(0, llm.ChatMessage(role="system", content=final_prompt))
                 

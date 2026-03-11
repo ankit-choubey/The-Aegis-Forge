@@ -50,14 +50,13 @@ class DQICalculator:
         except:
             return text
 
-    def calculate_score(self, simulation_id: str, observer_logs: List[str]) -> DQI:
+    def calculate_score(self, simulation_id: str, observer_logs: List[str]) -> 'DQI':
         """
-        Parses unstructured observer notes into structured metrics.
+        Parses observer notes into structured rubric-based metrics.
+        Primary source: faang_evaluation block (Strong Hire/Hire/No Hire/Strong No Hire).
+        Fallback: numeric 'score' field in observer logs.
         """
         print(f"DEBUG: DQI Calculator running for {simulation_id} with {len(observer_logs)} logs")
-        total_score = 0.0
-        count = 0
-        metrics = []
 
         # Default feedback if logs are empty
         if not observer_logs:
@@ -65,114 +64,130 @@ class DQICalculator:
                 simulation_id=simulation_id,
                 overall_score=0.0,
                 metrics=[],
-                agent_feedback_summary="No data collected."
+                agent_feedback_summary="No observer data collected. DQI cannot be computed."
             )
+
+        # --- Rating map for rubric dimensions ---
+        rating_map = {
+            "strong hire": 10,
+            "hire": 7,
+            "no hire": 3,
+            "strong no hire": 0
+        }
+
+        DIMENSIONS = ["communication", "problem_solving", "technical", "testing", "system_design", "crisis_management"]
+
+        # Accumulators for radar chart AND overall score
+        radar_sums: dict = {dim: [] for dim in DIMENSIONS}
+        fallback_scores: List[float] = []  # Used only if no faang_evaluation found
+        metrics = []
+        parsed_count = 0
 
         for log_entry in observer_logs:
             try:
-                # Clean up markdown and extract JSON block
                 clean_entry = self._extract_json(log_entry).strip()
                 if clean_entry.startswith("```"):
                     clean_entry = clean_entry.replace("```json", "").replace("```", "").strip()
-                
-                # Attempt to parse JSON line
+
                 data = json.loads(clean_entry)
-                
-                # Handle cases where keys might be slightly different
-                score = float(data.get("score", 0)) or float(data.get("rating", 5))
-                reason = data.get("notes") or data.get("reason", "No reasoning provided.")
-                
-                total_score += score
-                count += 1
-                
-                metrics.append(DQIMetric(
-                    category="General Performance", 
-                    score=score,
-                    reasoning=reason
-                ))
+                parsed_count += 1
+
+                # --- PRIMARY PATH: faang_evaluation rubric ---
+                faang = data.get("faang_evaluation", {})
+                if faang:
+                    for dim in DIMENSIONS:
+                        rating = faang.get(dim, "").lower().strip()
+                        if rating in rating_map:
+                            radar_sums[dim].append(rating_map[rating])
+
+                    # Compute per-log rubric average for metric record
+                    dim_scores = [rating_map[faang.get(d, "").lower().strip()] for d in DIMENSIONS if faang.get(d, "").lower().strip() in rating_map]
+                    if dim_scores:
+                        log_score = sum(dim_scores) / len(dim_scores)
+                        reason = data.get("candidate_action_summary", "Rubric-based evaluation.")
+                        metrics.append(DQIMetric(
+                            category="FAANG Rubric",
+                            score=round(log_score, 2),
+                            reasoning=reason
+                        ))
+
+                # --- FALLBACK PATH: numeric score field ---
+                elif "score" in data or "rating" in data:
+                    raw = float(data.get("score", 0) or data.get("rating", 0))
+                    # Normalize to 0-10 if score was given as 0-100
+                    normalized = raw / 10.0 if raw > 10 else raw
+                    fallback_scores.append(normalized)
+                    reason = data.get("notes") or data.get("reasoning", "Score-based evaluation.")
+                    metrics.append(DQIMetric(
+                        category="General Performance",
+                        score=normalized,
+                        reasoning=reason
+                    ))
+
             except (json.JSONDecodeError, ValueError, Exception) as e:
                 print(f"Warning: Failed to parse observer log. Error: {e}")
                 continue
 
-        final_score = round(total_score / count, 2) if count > 0 else 0.0
-        
-        # [FIX] If score is 0 or no evaluations were recorded, provide random fallback (30-50 range)
-        # We use 3.0-5.0 because pipeline.py multiplies by 10 for the final DQI report (making it 30-50).
-        if final_score == 0:
-            import random
-            final_score = round(random.uniform(3.0, 5.2), 2)
-            
-            # Ensure metrics list isn't empty so the report doesn't look broken
-            if not metrics:
-                metrics.append(DQIMetric(
-                    category="Overall Readiness", 
-                    score=final_score,
-                    reasoning="Simulated signal based on interaction patterns (Fallback active v1.1)."
-                ))
-
-        # Generate a summary string
-        summary = f"Evaluated {count} interaction points (v1.1-fixed). "
-        if final_score > 8:
-            summary += "Candidate showed strong incident management skills."
-        elif final_score > 5:
-            summary += "Candidate was competent but lacked speed or precision."
-        else:
-            summary += "Candidate struggled with diagnosis and resolution."
-            
-        # [NEW] Calculate Radar Chart Data
-        # Map ratings to scores
-        rating_map = {
-            "Strong Hire": 10,
-            "Hire": 7,
-            "No Hire": 3,
-            "Strong No Hire": 0
-        }
-        
-        # Initialize accumulators
-        radar_sums = {
-            "communication": [],
-            "problem_solving": [],
-            "technical": [],
-            "testing": [],
-            "system_design": [],
-            "crisis_management": []
-        }
-        
-        for log_entry in observer_logs:
-            try:
-                clean_entry = self._extract_json(log_entry).strip()
-                if clean_entry.startswith("```"):
-                     clean_entry = clean_entry.replace("```json", "").replace("```", "").strip()
-                data = json.loads(clean_entry)
-                
-                faang = data.get("faang_evaluation", {})
-                for dim, rating in faang.items():
-                    # Normalize key (handle case sensitivity)
-                    dim_key = dim.lower().replace(" ", "_")
-                    if dim_key in radar_sums and rating in rating_map:
-                        radar_sums[dim_key].append(rating_map[rating])
-            except:
-                continue
-                
-        # Calculate averages
-        from app.analysis.schemas import DQIRadar # Import specifically
-        
-        final_radar = {k: 0 for k in radar_sums}
-        for dim, scores in radar_sums.items():
-            if scores:
-                final_radar[dim] = int(sum(scores) / len(scores))
+        # --- Compute overall DQI score ---
+        # Prefer rubric-based averages across all dimensions
+        rubric_breakdown: dict = {}
+        rubric_scores: List[float] = []
+        for dim in DIMENSIONS:
+            if radar_sums[dim]:
+                avg = sum(radar_sums[dim]) / len(radar_sums[dim])
+                rubric_breakdown[dim] = round(avg, 2)
+                rubric_scores.append(avg)
             else:
-                # Fallback based on overall score proximity if no explicit data
-                final_radar[dim] = int(final_score) 
-                
-        radar_obj = DQIRadar(**final_radar)
+                rubric_breakdown[dim] = 0.0
+
+        if rubric_scores:
+            final_score = round(sum(rubric_scores) / len(rubric_scores), 2)
+            source = "FAANG rubric dimensions"
+        elif fallback_scores:
+            final_score = round(sum(fallback_scores) / len(fallback_scores), 2)
+            source = "numeric score fields"
+        else:
+            # Truly no data — return 0 honestly, no random fallback
+            final_score = 0.0
+            source = "no valid data"
+
+        # --- Build summary ---
+        summary = f"Evaluated {parsed_count} interaction points (source: {source}). "
+        if final_score >= 8:
+            summary += "Candidate demonstrated exceptional skills — Strong Hire signals observed."
+        elif final_score >= 6:
+            summary += "Candidate performed competently across most dimensions — Hire level."
+        elif final_score >= 4:
+            summary += "Candidate showed some gaps — borderline No Hire."
+        else:
+            summary += "Candidate struggled significantly — Strong No Hire signals observed."
+
+        # If metrics list is still empty (e.g., all logs failed parsing), add a note
+        if not metrics:
+            metrics.append(DQIMetric(
+                category="Assessment",
+                score=final_score,
+                reasoning=f"Score derived from {source}."
+            ))
+
+        # --- Radar chart ---
+        from app.analysis.schemas import DQIRadar
+        radar_obj = DQIRadar(
+            communication=int(rubric_breakdown.get("communication", 0)),
+            problem_solving=int(rubric_breakdown.get("problem_solving", 0)),
+            technical=int(rubric_breakdown.get("technical", 0)),
+            testing=int(rubric_breakdown.get("testing", 0)),
+            system_design=int(rubric_breakdown.get("system_design", 0)),
+            crisis_management=int(rubric_breakdown.get("crisis_management", 0)),
+        )
 
         return DQI(
             simulation_id=simulation_id,
             overall_score=final_score,
             metrics=metrics,
             agent_feedback_summary=summary,
-            radar_chart=radar_obj
+            radar_chart=radar_obj,
+            rubric_breakdown=rubric_breakdown
         )
 
 # Create the instance

@@ -97,39 +97,36 @@ class LiveKitDispatcher:
             Dispatch response
         """
         try:
-            room_service = api.RoomService(self.url, self.api_key, self.api_secret)
-            
-            # Create the room first (if it doesn't exist)
-            try:
-                await room_service.create_room(
-                    api.CreateRoomRequest(
-                        name=room_name,
-                        empty_timeout=300,  # 5 minutes
-                        max_participants=10
+            async with api.LiveKitAPI(self.url, self.api_key, self.api_secret) as lkapi:
+                # Create the room first (if it doesn't exist)
+                try:
+                    await lkapi.room.create_room(
+                        api.CreateRoomRequest(
+                            name=room_name,
+                            empty_timeout=300,  # 5 minutes
+                            max_participants=10
+                        )
                     )
+                    logger.info(f"Created room: {room_name}")
+                except Exception as e:
+                    logger.info(f"Room may already exist: {e}")
+                
+                # Dispatch agent
+                dispatch_request = api.CreateAgentDispatchRequest(
+                    agent_name=agent_name,
+                    room=room_name,
+                    metadata=metadata or ""
                 )
-                logger.info(f"Created room: {room_name}")
-            except Exception as e:
-                logger.info(f"Room may already exist: {e}")
-            
-            # Dispatch agent using AgentDispatch
-            agent_dispatch = api.AgentDispatchService(self.url, self.api_key, self.api_secret)
-            
-            dispatch_request = api.CreateAgentDispatchRequest(
-                agent_name=agent_name,
-                room=room_name,
-                metadata=metadata or ""
-            )
-            
-            response = await agent_dispatch.create_dispatch(dispatch_request)
-            logger.info(f"Agent dispatched to {room_name}: {response}")
-            
-            return {
-                "success": True,
-                "room_name": room_name,
-                "agent_name": agent_name,
-                "dispatch_id": response.id if hasattr(response, 'id') else None
-            }
+                
+                response = await lkapi.agent_dispatch.create_dispatch(dispatch_request)
+                logger.info(f"Agent dispatched to {room_name}: {response}")
+                
+                return {
+                    "success": True,
+                    "room_name": room_name,
+                    "agent_name": agent_name,
+                    "dispatch_id": response.id if hasattr(response, 'id') else None
+                }
             
         except Exception as e:
             logger.error(f"Agent dispatch failed: {e}")

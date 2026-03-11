@@ -68,6 +68,15 @@ class PDFReportGenerator:
             textColor=colors.grey
         ))
 
+        self.styles.add(ParagraphStyle(
+            name='BodyWrap',
+            parent=self.styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            leading=13,
+            wordWrap='CJK'
+        ))
+
     def generate_report_bytes(self, fsir_data: dict) -> bytes:
         """
         Generates the PDF and returns the bytes.
@@ -149,9 +158,9 @@ class PDFReportGenerator:
         for event in timeline_events:
             timeline_data.append([
                 event.get('time', ''),
-                Paragraph(event.get('action', ''), self.styles['Normal']),
-                Paragraph(event.get('state_change', ''), self.styles['Normal']),
-                event.get('evaluation', '')
+                Paragraph(str(event.get('action', '')), self.styles['BodyWrap']),
+                Paragraph(str(event.get('state_change', '')), self.styles['BodyWrap']),
+                Paragraph(str(event.get('evaluation', '')), self.styles['BodyWrap'])
             ])
             
         t = Table(timeline_data, colWidths=[0.8*inch, 2.5*inch, 2*inch, 1.2*inch])
@@ -164,6 +173,11 @@ class PDFReportGenerator:
             ('GRID', (0, 0), (-1, -1), 0.5, colors.lightgrey),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.whitesmoke]),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
         ]))
         elements.append(t)
         elements.append(Spacer(1, 20))
@@ -242,12 +256,14 @@ class PDFReportGenerator:
         dqi_table = Table(dqi_metrics, colWidths=[1.8*inch, 1.8*inch, 1.8*inch, 1.8*inch])
         dqi_table.setStyle(TableStyle([
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,0), 30),
+            ('FONTSIZE', (0,0), (-1,0), 24),
             ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
             ('TEXTCOLOR', (0,0), (-1,0), self.primary_color),
             ('TEXTCOLOR', (0,1), (-1,1), colors.grey),
-            ('FONTSIZE', (0,1), (-1,1), 10),
+            ('FONTSIZE', (0,1), (-1,1), 9),
             ('TOPPADDING', (0,0), (-1,-1), 10),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 10),
         ]))
         elements.append(dqi_table)
         elements.append(Spacer(1, 20))
@@ -273,14 +289,21 @@ class PDFReportGenerator:
         if comm_stats:
             c_data = [["Metric", "Observation"]]
             for c in comm_stats:
-                c_data.append([c.get('metric'), c.get('observation')])
+                c_data.append([
+                    Paragraph(str(c.get('metric', '')), self.styles['BodyWrap']),
+                    Paragraph(str(c.get('observation', '')), self.styles['BodyWrap'])
+                ])
             
             c_table = Table(c_data, colWidths=[3*inch, 3*inch])
             c_table.setStyle(TableStyle([
                  ('BACKGROUND', (0,0), (-1,0), self.bg_color),
                  ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
                  ('GRID', (0,0), (-1,-1), 0.5, colors.lightgrey),
-                 ('PADDING', (0,0), (-1,-1), 8),
+                 ('VALIGN', (0,0), (-1,-1), 'TOP'),
+                 ('LEFTPADDING', (0,0), (-1,-1), 8),
+                 ('RIGHTPADDING', (0,0), (-1,-1), 8),
+                 ('TOPPADDING', (0,0), (-1,-1), 6),
+                 ('BOTTOMPADDING', (0,0), (-1,-1), 6),
             ]))
             elements.append(c_table)
         elements.append(Spacer(1, 20))
@@ -339,6 +362,63 @@ class PDFReportGenerator:
                 ('FONTNAME', (1,1), (-1,-1), 'Helvetica-Bold'),
             ]))
             elements.append(matrix_table)
+
+        # 9. MediaPipe Behavioral Biometrics
+        mp = fsir_data.get('mediapipe_summary')
+        if mp:
+            elements.append(Spacer(1, 20))
+            elements.append(Paragraph("- Behavioral Biometrics (MediaPipe)", self.styles['AegisSection']))
+            elements.append(Paragraph("AI-powered video & audio analysis of candidate behavior during interview.", self.styles['Normal']))
+            elements.append(Spacer(1, 10))
+            
+            # Score metrics table (6 scores)
+            score_values = [
+                [
+                    str(mp.get('eye_contact_score', 0)),
+                    str(mp.get('composure_score', 0)),
+                    str(mp.get('posture_score', 0)),
+                    str(mp.get('fluency_score', 0)),
+                    str(mp.get('engagement_score', 0)),
+                    str(mp.get('authenticity_score', 0))
+                ],
+                ["Eye Contact", "Composure", "Posture", "Fluency", "Engagement", "Authenticity"]
+            ]
+            
+            mp_score_table = Table(score_values, colWidths=[1.1*inch]*6)
+            mp_score_table.setStyle(TableStyle([
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 24),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('TEXTCOLOR', (0,0), (-1,0), self.primary_color),
+                ('TEXTCOLOR', (0,1), (-1,1), colors.grey),
+                ('FONTSIZE', (0,1), (-1,1), 9),
+                ('TOPPADDING', (0,0), (-1,-1), 8),
+            ]))
+            elements.append(mp_score_table)
+            elements.append(Spacer(1, 15))
+            
+            # Biometric observations
+            bio_signals = mp.get('biometric_signals', [])
+            if bio_signals:
+                bio_text = "<b>Biometric Observations:</b><br/>"
+                bio_text += "<br/>".join(f"• {s}" for s in bio_signals)
+                elements.append(Paragraph(bio_text, self.styles['ExecutiveBlock']))
+                elements.append(Spacer(1, 10))
+            
+            # Cheating flags
+            cheat_flags = mp.get('cheating_flags', [])
+            if cheat_flags:
+                cheat_text = "<b>Integrity — Gaze Analysis:</b><br/>"
+                cheat_text += "<br/>".join(f"• {s}" for s in cheat_flags)
+                elements.append(Paragraph(cheat_text, self.styles['ExecutiveBlock']))
+                elements.append(Spacer(1, 10))
+            
+            # Communication fluency from MediaPipe
+            fluency_notes = mp.get('communication_fluency_notes', [])
+            if fluency_notes:
+                elements.append(Paragraph("- Communication Fluency (MediaPipe)", self.styles['AegisSection']))
+                fluency_text = "<br/>".join(f"• {n}" for n in fluency_notes)
+                elements.append(Paragraph(fluency_text, self.styles['ExecutiveBlock']))
 
         # Build PDF
         doc.build(elements)

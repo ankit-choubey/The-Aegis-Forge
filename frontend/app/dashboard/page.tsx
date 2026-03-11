@@ -623,10 +623,16 @@ const SkillSelectionResult = ({
                                         <div className="flex items-center gap-2">
                                             <CheckCircle className="w-4 h-4 text-emerald-400" />
                                             <span className="text-emerald-400 font-mono text-xs font-semibold">
-                                                VERIFIED VIA GITHUB
+                                                {audit.verification_breakdown.verified_skills.length > 0 
+                                                    ? 'VERIFIED VIA GITHUB' 
+                                                    : 'PROJECTS FROM RESUME'}
                                             </span>
                                         </div>
-                                        <span className="text-emerald-400/50 text-xs font-mono">{audit.verification_breakdown.verified_skills.length} confirmed</span>
+                                        <span className="text-emerald-400/50 text-xs font-mono">
+                                            {audit.verification_breakdown.verified_skills.length > 0 
+                                                ? `${audit.verification_breakdown.verified_skills.length} confirmed`
+                                                : `${(audit.resume_claims?.projects_extracted_text || []).length} detected`}
+                                        </span>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {audit.verification_breakdown.verified_skills.length > 0 ? (
@@ -634,6 +640,13 @@ const SkillSelectionResult = ({
                                                 <span key={skill} className="px-3 py-1.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-medium rounded-lg flex items-center gap-1.5">
                                                     {skill}
                                                     <Check className="w-3 h-3 opacity-50" />
+                                                </span>
+                                            ))
+                                        ) : (audit.resume_claims?.projects_extracted_text || []).length > 0 ? (
+                                            (audit.resume_claims?.projects_extracted_text || []).map((project: string, idx: number) => (
+                                                <span key={idx} className="px-3 py-1.5 bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 text-xs font-medium rounded-lg flex items-center gap-1.5">
+                                                    <Rocket className="w-3 h-3 opacity-60" />
+                                                    {project}
                                                 </span>
                                             ))
                                         ) : (
