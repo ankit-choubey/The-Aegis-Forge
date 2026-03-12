@@ -1,0 +1,17 @@
+[Unit]
+Description=Aegis Forge Next.js Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__/frontend
+EnvironmentFile=/etc/aegis/frontend.env
+ExecStart=/usr/bin/env bash -lc 'npm run start -- --hostname $FRONTEND_HOST --port $FRONTEND_PORT'
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

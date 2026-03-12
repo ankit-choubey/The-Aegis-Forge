@@ -1,0 +1,17 @@
+[Unit]
+Description=Aegis Forge LiveKit Agent Runtime
+After=network.target aegis-backend.service
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=/etc/aegis/agent.env
+ExecStart=__APP_DIR__/.venv/bin/python app/main.py start
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

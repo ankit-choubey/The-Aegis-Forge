@@ -26,17 +26,27 @@ app = FastAPI(title="Aegis-Forge Plugin Gateway (God Mode)")
 logger = logging.getLogger("AEGIS-GATEWAY")
 
 # CORS for frontend
+def _load_allowed_origins() -> List[str]:
+    raw = os.getenv("ALLOWED_ORIGINS")
+    if raw:
+        origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    else:
+        origins = ["http://localhost:3000"]
+    return origins or ["http://localhost:3000"]
+
+ALLOWED_ORIGINS = _load_allowed_origins()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://f6bd14bc925f.ngrok-free.app", "*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials="*" not in ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Uploads directory
-UPLOADS_DIR = Path("uploads")
-UPLOADS_DIR.mkdir(exist_ok=True)
+UPLOADS_DIR = Path(os.getenv("UPLOADS_DIR", "uploads"))
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 # --- CONTRACTS (STRICT VALIDATION) ---
 class RoleContext(BaseModel):

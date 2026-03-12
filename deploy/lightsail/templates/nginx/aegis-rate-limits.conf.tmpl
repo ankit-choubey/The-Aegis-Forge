@@ -1,0 +1,3 @@
+# Global rate limit zones (http context)
+limit_req_zone $binary_remote_addr zone=aegis_upload:10m rate=10r/m;
+limit_req_zone $binary_remote_addr zone=aegis_login:10m rate=30r/m;

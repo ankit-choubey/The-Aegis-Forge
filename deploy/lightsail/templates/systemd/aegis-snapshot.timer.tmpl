@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Aegis Lightsail snapshot timer
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=aegis-snapshot.service
+
+[Install]
+WantedBy=timers.target

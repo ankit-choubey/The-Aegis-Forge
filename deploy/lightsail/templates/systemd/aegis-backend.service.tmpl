@@ -1,0 +1,17 @@
+[Unit]
+Description=Aegis Forge FastAPI Backend
+After=network.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+Group=__APP_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=/etc/aegis/backend.env
+ExecStart=__APP_DIR__/.venv/bin/uvicorn backend.main:app --host $BACKEND_HOST --port $BACKEND_PORT
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
