@@ -1,272 +1,265 @@
-# Aegis Forge
+<div align="center">
+  <h1>Aegis Forge</h1>
+  <p><em>Real-Time Multi-Agent AI Interview Platform for Technical Hiring</em></p>
 
-Aegis Forge is a full-stack AI interview simulation platform with:
-- a FastAPI backend for resume intake, orchestration, and artifact delivery,
-- a LiveKit multi-agent runtime for real-time voice interviews,
-- a Next.js frontend for recruiter, candidate, interview, and reporting flows.
+  <p>
+    <img src="https://img.shields.io/github/stars/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Stars" />
+    <img src="https://img.shields.io/github/forks/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Forks" />
+    <img src="https://img.shields.io/github/issues/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Issues" />
+    <img src="https://img.shields.io/github/license/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="License" />
+  </p>
 
-## What The Project Does
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+    <img src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+    <img src="https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js" />
+    <img src="https://img.shields.io/badge/LiveKit-Agents-1F5FFF?style=for-the-badge&logo=livekit&logoColor=white" alt="LiveKit" />
+    <img src="https://img.shields.io/badge/Groq-LLM-F55036?style=for-the-badge&logo=databricks&logoColor=white" alt="Groq" />
+    <img src="https://img.shields.io/badge/Deepgram-STT%2FTTS-13B5EA?style=for-the-badge&logo=voicemod&logoColor=white" alt="Deepgram" />
+    <img src="https://img.shields.io/badge/TypeScript-Frontend-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
+  </p>
 
-Aegis Forge runs a structured technical interview pipeline:
-1. Candidate resume is uploaded and validated.
-2. Skills/claims are analyzed and mapped to a role scenario.
-3. A LiveKit room is created and an AI interviewer agent is dispatched.
-4. Multi-agent interview runs in real time (voice + event telemetry).
-5. FSIR artifacts (JSON/PDF), Q&A logs, and feedback report are generated.
+  <p>
+    <a href="#-demo">Demo</a> -
+    <a href="#-quickstart">Quickstart</a> -
+    <a href="#-features">Features</a> -
+    <a href="#-architecture">Architecture</a> -
+    <a href="#-api">API</a> -
+    <a href="None">🚀 Live</a>
+  </p>
+</div>
 
-## Core Architecture
+## 🎬 Demo
 
-### 1) API Gateway (FastAPI)
-Main file: `backend/main.py`
+<div align="center">
+  <img src="None" width="700" alt="Aegis Forge Demo"/>
+</div>
 
-Responsibilities:
-- Resume upload and validation
-- Candidate auth/session bootstrap
-- LiveKit room/token/dispatch coordination
-- Focus-topic and role override controls for recruiters
-- MediaPipe telemetry ingestion
-- Report/Q&A/feedback download endpoints
+> 📸 Screenshots coming soon. Star the repo to stay updated.
 
-### 2) Interview Agent Runtime (LiveKit Agents)
-Main file: `app/main.py`
+## 🎯 What is Aegis Forge?
 
-Registered agent: `aegis-interviewer`
+Aegis Forge is a full-stack **AI interview simulation platform** that automates technical interview delivery from resume upload to post-interview reporting. It combines a **FastAPI backend**, a **LiveKit multi-agent voice runtime**, and a **Next.js frontend** for recruiter and candidate workflows. The system validates resume claims, creates role-aware interview scenarios, runs dynamic multi-agent conversations in real time, and generates structured FSIR/Q&A/feedback artifacts. It is designed for teams that need **scalable**, **consistent**, and **observable** technical assessment pipelines.
 
-Participating agent roles:
-- Incident Lead (primary interviewer)
-- Pressure Agent (stress/interruption dynamics)
-- Observer Agent (evaluation and DQI inputs)
-- Mole Agent (integrity tests)
-- Governor Agent (safety checks)
-- Crisis Popup Agent (timed crisis injections)
+> 🏆 **Built as an advanced applied-AI interview orchestration system for production-style recruiter and candidate workflows.**
 
-Runtime stack:
-- STT: Deepgram
-- LLM: Groq
-- TTS: Deepgram
-- Optional avatar stream: Simli
+## ✨ Features
 
-### 3) Knowledge and Scenario Layer
-- `backend/funnel/pipeline.py`: singleton knowledge engine for resume context, focus topics, and market intel
-- `backend/funnel/pathway_engine.py`: Pathway-backed document indexing/retrieval helpers
-- `app/rag/scenarios.json`: scenario definitions
-- `app/rag/scenarios.py`: scenario loader
+- 🎙 **Real-Time AI Voice Interviews** — Runs low-latency interview conversations using LiveKit with Deepgram STT/TTS.
+- 🧠 **Multi-Agent Interview Dynamics** — Coordinates Incident Lead, Pressure, Observer, Mole, Governor, and Crisis Popup agents.
+- 📄 **Resume-Aware Interviewing** — Validates resume claims and auto-adapts scenarios and questioning focus.
+- 🧭 **Recruiter Control Layer** — Supports focus-topic injection and candidate-role overrides via API.
+- 📊 **Telemetry + Evaluation Signals** — Captures MediaPipe metrics and agent-side events for richer assessment.
+- 📝 **Artifact Generation Pipeline** — Produces report PDFs, feedback PDFs, Q&A logs, and audit JSON outputs.
+- 🔐 **Session + Room Orchestration** — Generates candidate sessions, tokens, and LiveKit dispatch metadata.
+- 🖥 **Full-Stack UX Surface** — Provides candidate, recruiter, room, monitor, and report routes in Next.js.
 
-### 4) Frontend (Next.js App Router)
-Root: `frontend/`
+## 🏗 Architecture
 
-Major routes:
-- `/` landing
-- `/candidate` candidate login
-- `/dashboard` candidate onboarding + resume flow
-- `/recruiter` recruiter control panel
-- `/interview/room` live interview room
-- `/monitor/[roomId]` monitoring view
-- `/report/[reportId]` report view
-- `/features/*` product/feature demos
+<p align="center">
+  <img src="None" width="90%" alt="Architecture Diagram"/>
+</p>
 
-## Tech Stack
-
-### Backend
-- Python
-- FastAPI
-- LiveKit Agents + LiveKit Server SDK
-- Groq API
-- Deepgram
-- Pathway
-- ReportLab
-- pdfplumber (+ OCR fallbacks when installed)
-
-### Frontend
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- LiveKit React Components
-- Monaco Editor
-
-## Repository Layout
-
-```text
-.
-├── app/                    # LiveKit agent app and analysis modules
-├── backend/                # FastAPI API and knowledge engine
-├── frontend/               # Next.js frontend
-├── scripts/                # Utility/debug scripts
-├── tests/                  # Python test suite
-├── uploads/                # Runtime-generated artifacts and candidate data
-├── livekit-agents/         # Workspace package
-├── livekit-plugins/        # Workspace plugins
-├── pyproject.toml
-├── makefile
-└── README.md
+```mermaid
+flowchart TD
+    A[Candidate Uploads Resume<br/>Frontend dashboard] --> B[FastAPI API Gateway<br/>backend/main.py]
+    B --> C[Resume Validation + Audit<br/>backend/resume_validator.py]
+    C --> D[Knowledge Engine + Scenario Context<br/>backend/funnel/pipeline.py]
+    D --> E[Interview Start Endpoint<br/>Token + Room + Dispatch]
+    E --> F[LiveKit Room]
+    F --> G[Agent Runtime<br/>app/main.py aegis-interviewer]
+    G --> H[Incident Lead]
+    G --> I[Pressure Agent]
+    G --> J[Observer Agent]
+    G --> K[Mole Agent]
+    G --> L[Governor Agent]
+    G --> M[Crisis Popup Agent]
+    H --> N[Deepgram STT/TTS]
+    I --> O[Groq LLM]
+    J --> O
+    K --> O
+    L --> O
+    M --> O
+    G --> P[Session Audit + Questions Logs]
+    P --> Q[Uploads Artifacts<br/>JSON/PDF/Feedback]
+    Q --> R[Report + Monitoring Views<br/>Next.js frontend]
 ```
 
-## Prerequisites
+## 🛠 Tech Stack
+
+| Layer | Technology | Purpose |
+|:------|:-----------|:--------|
+| Backend API | Python + FastAPI | Resume intake, session APIs, orchestration endpoints |
+| Agent Runtime | LiveKit Agents | Real-time room participation and agent graph execution |
+| LLM | Groq | Interview reasoning, dynamic scenario and response generation |
+| Speech | Deepgram | Speech-to-text and text-to-speech for voice interview loop |
+| Frontend | Next.js 16 + React 19 + TypeScript | Candidate/recruiter UI, room and report surfaces |
+| Styling | Tailwind CSS 4 | Frontend utility-first styling and responsive layouts |
+| Knowledge Layer | Pathway helpers + custom pipeline | Candidate context retrieval and scenario alignment |
+| Reporting | ReportLab + JSON logging | FSIR/feedback PDFs and structured audit outputs |
+| Tooling | uv + Ruff + Mypy + Pytest | Dependency management, linting, typing, and tests |
+
+## ⚡ Quickstart
+
+### Prerequisites
 
 - Python 3.11+
 - Node.js 18+
-- `uv` package manager
-- LiveKit Cloud project (or compatible LiveKit setup)
-- API keys for Groq and Deepgram
+- uv package manager
+- npm
+- LiveKit credentials
+- Groq and Deepgram API keys
 
-## Environment Variables
+### Installation
 
-Set these in root `.env`.
-
-### Required (backend/agent)
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-- `GROQ_API_KEY`
-- `DEEPGRAM_API_KEY`
-
-### Optional
-- `SIMLI_API_KEY`
-- `SIMLI_FACE_ID`
-- `UPLOADS_DIR` (default: `uploads`)
-- `ALLOWED_ORIGINS` (comma-separated; default includes `http://localhost:3000`)
-
-### Frontend
-- `NEXT_PUBLIC_API_BASE` (recommended to point at local FastAPI, e.g. `http://localhost:8000`)
-- `NEXT_PUBLIC_LIVEKIT_URL`
-
-## Local Setup
-
-### 1) Install Python deps
 ```bash
+# 1. Clone the repo
+git clone https://github.com/ankit-choubey/Aegis-Forge-Agent.git
+cd Aegis-Forge-Agent
+
+# 2. Create virtual environment
+python -m venv .venv && source .venv/bin/activate
+
+# 3. Install Python dependencies
 uv sync --all-extras --dev
+
+# 4. Install frontend dependencies
+cd frontend && npm install && cd ..
 ```
 
-### 2) Install frontend deps
-```bash
-cd frontend
-npm install
-cd ..
+### Environment Variables
+
+Create a .env file:
+
+```ini
+# LiveKit server URL
+LIVEKIT_URL=wss://your-livekit-host
+
+# LiveKit API key
+LIVEKIT_API_KEY=your_livekit_api_key
+
+# LiveKit API secret
+LIVEKIT_API_SECRET=your_livekit_api_secret
+
+# Groq API key for LLM calls
+GROQ_API_KEY=your_groq_api_key
+
+# Deepgram API key for STT/TTS
+DEEPGRAM_API_KEY=your_deepgram_api_key
+
+# Optional Simli avatar key
+SIMLI_API_KEY=your_simli_api_key
+
+# Optional Simli face identifier
+SIMLI_FACE_ID=your_simli_face_id
+
+# Optional uploads path
+UPLOADS_DIR=uploads
+
+# Allowed CORS origins
+ALLOWED_ORIGINS=http://localhost:3000
+
+# Frontend URL for backend API
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+
+# Frontend LiveKit URL
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-host
 ```
 
-### 3) Start FastAPI backend
+### Run
+
 ```bash
+# Terminal 1: start backend
 uvicorn backend.main:app --reload --port 8000
-```
 
-### 4) Start LiveKit agent runtime
-```bash
+# Terminal 2: start agent runtime
 python app/main.py dev
-```
-(Production-style run is also supported via LiveKit CLI modes.)
 
-### 5) Start frontend
-```bash
-cd frontend
-npm run dev
+# Terminal 3: start frontend
+cd frontend && npm run dev
 ```
 
-Frontend default: `http://localhost:3000`
+## 📁 Project Structure
 
-## End-to-End Flow
+<details>
+<summary>Click to expand</summary>
 
-1. Recruiter/candidate uploads resume (`POST /upload-resume`).
-2. Backend returns `candidate_id` + generated password + audit payload.
-3. Candidate authenticates (`POST /candidate-login`).
-4. Recruiter optionally sets focus topics (`POST /api/set-focus-topics`) or role override (`POST /api/set-candidate-role`).
-5. Session starts (`POST /start-interview`), token and room are generated, agent dispatched.
-6. Interview proceeds in LiveKit room with multi-agent orchestration.
-7. MediaPipe telemetry can be pushed (`POST /mediapipe-metrics`).
-8. On completion, FSIR + Q&A + feedback artifacts are available for download.
-
-## API Surface (FastAPI)
-
-### Health and session
-- `GET /`
-- `POST /aegis/start`
-- `GET /aegis/sessions`
-- `GET /aegis/session/{session_id}`
-
-### Candidate lifecycle
-- `POST /upload-resume`
-- `POST /candidate-login`
-- `POST /start-interview`
-- `POST /stop-interview`
-- `GET /candidate/{candidate_id}`
-- `GET /candidates`
-
-### Recruiter controls
-- `POST /api/set-focus-topics`
-- `POST /api/set-candidate-role`
-
-### Telemetry
-- `POST /mediapipe-metrics`
-- `GET /mediapipe-metrics/{candidate_id}`
-
-### Artifacts and results
-- `GET /interview-results/{candidate_id}`
-- `GET /download-report/{candidate_id}`
-- `GET /download-qna/{candidate_id}`
-- `GET /download-feedback/{candidate_id}`
-
-## Generated Files and Runtime Data
-
-Primary runtime directory: `uploads/`
-
-Common artifacts:
-- `{candidate_id}_audit.json`
-- `{candidate_id}_mediapipe.json`
-- `focus_config.json`
-- `db.json`
-- `fsir_{candidate_or_session}.pdf`
-- `questions_{candidate}.json`
-- `feedback_{candidate}.pdf`
-
-## Frontend Server Routes
-
-- `GET /api/livekit/token` (token generation + optional dispatch)
-- `POST /api/execute` (local code execution helper for interview coding tasks)
-
-## Security and Operational Notes
-
-- `frontend/app/api/execute/route.ts` runs submitted code via local shell commands; deploy only in trusted environments or remove/lock down this route.
-- Candidate/session data is partially in-memory (`candidate_audits`, `mediapipe_store`) and partially persisted (`uploads/db.json`, audit files). Restarting services clears memory but login can rehydrate from disk.
-- Some frontend pages contain hardcoded ngrok fallbacks; set `NEXT_PUBLIC_API_BASE` explicitly in local/dev/prod environments.
-
-## Testing and Quality
-
-### Make targets
-```bash
-make help
-make check
-make format
-make lint
-make type-check
+```text
+.
+├── README.md
+├── app/
+├── backend/
+├── frontend/
+├── deploy/
+├── scripts/
+├── tests/
+├── documentation/
+├── legal/
+├── sample_resumes/
+├── utility_scripts/
+├── archive_apps/
+├── makefile
+├── pyproject.toml
+└── uv.lock
 ```
 
-### Agent verification helper
-```bash
-python3 scripts/verify_agents.py
-```
+</details>
 
-### Python tests
-```bash
-uv run pytest
-```
+## 📡 API
 
-## Troubleshooting
+| Method | Endpoint | Description |
+|:-------|:---------|:------------|
+| GET | / | Health check |
+| POST | /aegis/start | Start orchestrated Aegis session |
+| GET | /aegis/sessions | List active sessions |
+| GET | /aegis/session/{session_id} | Get session details |
+| POST | /upload-resume | Upload and validate candidate resume |
+| POST | /candidate-login | Candidate authentication |
+| POST | /start-interview | Start interview room/token/dispatch flow |
+| POST | /stop-interview | Stop interview session |
+| GET | /candidate/{candidate_id} | Candidate lookup |
+| GET | /candidates | List candidates |
+| POST | /api/set-focus-topics | Recruiter focus-topic override |
+| POST | /api/set-candidate-role | Recruiter role override |
+| POST | /mediapipe-metrics | Ingest behavioral telemetry |
+| GET | /mediapipe-metrics/{candidate_id} | Read candidate telemetry |
+| GET | /interview-results/{candidate_id} | Fetch consolidated results |
+| GET | /download-report/{candidate_id} | Download report PDF |
+| GET | /download-qna/{candidate_id} | Download Q&A JSON |
+| GET | /download-feedback/{candidate_id} | Download feedback PDF |
 
-- If agent does not join room:
-  - Verify `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`.
-  - Confirm `aegis-interviewer` agent is running (`python app/main.py dev`).
+## 🔮 Roadmap
 
-- If interview has no voice:
-  - Check `GROQ_API_KEY` and `DEEPGRAM_API_KEY`.
-  - Ensure browser mic permissions are granted.
+- [x] End-to-end resume-to-interview orchestration
+- [x] Multi-agent real-time interview runtime
+- [ ] Live demo deployment with public hosted room experience
+- [ ] Persistent database-backed candidate/session storage
+- [ ] Expanded evaluator rubric and scoring explainability
+- [ ] Recruiter analytics dashboard with historical trend views
+- [ ] Hardened production auth and RBAC for recruiter controls
 
-- If frontend cannot reach backend:
-  - Set `NEXT_PUBLIC_API_BASE=http://localhost:8000`.
-  - Check CORS via `ALLOWED_ORIGINS`.
+## 🤝 Contributing
 
-- If report download returns 404:
-  - Confirm interview completed and artifact exists in `uploads/`.
+Contributions are welcome! Here's how:
 
-## License
+1. Fork the repo
+2. Create your branch: git checkout -b feat/your-feature
+3. Commit changes: git commit -m "feat: add your feature"
+4. Push: git push origin feat/your-feature
+5. Open a Pull Request
 
-See `license.md`.
+Please follow [Conventional Commits](https://www.conventionalcommits.org/).
+
+## 📜 License
+
+Distributed under the Proprietary license. See [license.md](legal/license.md) for details.
+
+***
+
+<div align="center">
+  <p>Built with 🔥 by <a href="https://github.com/ankit-choubey">Ankit Choubey</a></p>
+  <p>
+    <a href="https://github.com/ankit-choubey/Aegis-Forge-Agent/issues">Report Bug</a> -
+    <a href="https://github.com/ankit-choubey/Aegis-Forge-Agent/issues">Request Feature</a>
+  </p>
+</div>
