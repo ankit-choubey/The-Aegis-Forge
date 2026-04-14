@@ -24,15 +24,14 @@
     <a href="#-quickstart">Quickstart</a> -
     <a href="#-features">Features</a> -
     <a href="#-architecture">Architecture</a> -
-    <a href="#-api">API</a> -
-    <a href="None">🚀 Live</a>
+    <a href="#-api">API</a>
   </p>
 </div>
 
 ## 🎬 Demo
 
 <div align="center">
-  <img src="None" width="700" alt="Aegis Forge Demo"/>
+  <p><strong>Public demo media coming soon.</strong></p>
 </div>
 
 > 📸 Screenshots coming soon. Star the repo to stay updated.
@@ -62,12 +61,12 @@ Aegis Forge is a full-stack **AI interview simulation platform** that automates 
 
 ```mermaid
 flowchart TD
-    A[Candidate Uploads Resume<br/>Frontend dashboard] --> B[FastAPI API Gateway<br/>backend/main.py]
-    B --> C[Resume Validation + Audit<br/>backend/resume_validator.py]
-    C --> D[Knowledge Engine + Scenario Context<br/>backend/funnel/pipeline.py]
+  A[Candidate Uploads Resume<br/>Frontend dashboard] --> B[FastAPI API Gateway]
+  B --> C[Resume Validation + Audit]
+  C --> D[Knowledge Engine + Scenario Context]
     D --> E[Interview Start Endpoint<br/>Token + Room + Dispatch]
     E --> F[LiveKit Room]
-    F --> G[Agent Runtime<br/>app/main.py aegis-interviewer]
+  F --> G[Agent Runtime<br/>aegis-interviewer]
     G --> H[Incident Lead]
     G --> I[Pressure Agent]
     G --> J[Observer Agent]
@@ -207,20 +206,16 @@ cd frontend && npm run dev
 
 ## 📡 API
 
+Internal orchestration and operator-only endpoints are intentionally omitted from this public README.
+
 | Method | Endpoint | Description |
 |:-------|:---------|:------------|
 | GET | / | Health check |
-| POST | /aegis/start | Start orchestrated Aegis session |
-| GET | /aegis/sessions | List active sessions |
-| GET | /aegis/session/{session_id} | Get session details |
 | POST | /upload-resume | Upload and validate candidate resume |
 | POST | /candidate-login | Candidate authentication |
 | POST | /start-interview | Start interview room/token/dispatch flow |
-| POST | /stop-interview | Stop interview session |
 | GET | /candidate/{candidate_id} | Candidate lookup |
 | GET | /candidates | List candidates |
-| POST | /api/set-focus-topics | Recruiter focus-topic override |
-| POST | /api/set-candidate-role | Recruiter role override |
 | POST | /mediapipe-metrics | Ingest behavioral telemetry |
 | GET | /mediapipe-metrics/{candidate_id} | Read candidate telemetry |
 | GET | /interview-results/{candidate_id} | Fetch consolidated results |
