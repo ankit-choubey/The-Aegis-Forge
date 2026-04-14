@@ -178,6 +178,12 @@ python app/main.py dev
 cd frontend && npm run dev
 ```
 
+### Production Notes
+
+- Restrict or remove code-execution style routes in untrusted environments
+- Set strict CORS origins instead of wildcard development defaults
+- Store secrets in a managed vault instead of plain environment files where possible
+
 ## 📁 Project Structure
 
 <details>
