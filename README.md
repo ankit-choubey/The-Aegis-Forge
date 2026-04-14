@@ -233,6 +233,14 @@ Internal orchestration and operator-only endpoints are intentionally omitted fro
 - [ ] Recruiter analytics dashboard with historical trend views
 - [ ] Hardened production auth and RBAC for recruiter controls
 
+## 🔐 Security
+
+Please avoid opening public issues for security vulnerabilities.
+
+- Report security concerns privately to: ankitkumarchoubey0909@gmail.com
+- Include reproduction steps, impact scope, and affected endpoints/components
+- You can expect an acknowledgement within 72 hours
+
 ## 🤝 Contributing
 
 Contributions are welcome! Here's how:
