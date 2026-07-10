@@ -195,3 +195,4 @@ fsir_*.json
 fsir_*.pdf
 questions_*.json
 *.pdf
+.agents/
