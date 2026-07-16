@@ -12,7 +12,14 @@ dependencies = [
     "livekit-plugins-groq",
     "livekit-plugins-deepgram",
     "livekit-plugins-silero",
+    "livekit-plugins-simli",
+    "langgraph",
+    "python-multipart",
+    "reportlab",
 ]
+
+
+
 
 [tool.uv]
 constraint-dependencies = ['onnxruntime<1.20.0; python_version == "3.9"']

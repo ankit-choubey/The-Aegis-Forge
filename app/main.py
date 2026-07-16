@@ -242,8 +242,8 @@ async def my_agent(ctx: JobContext):
         # LLM: Groq (Low Latency)
         llm=groq_llm,
         
-        # TTS: Deepgram (Low Latency)
-        tts=deepgram.TTS(model="aura-asteria-en"),
+        # TTS: Deepgram (Low Latency) - Match Simli's 16kHz audio input requirement
+        tts=deepgram.TTS(model="aura-asteria-en", sample_rate=16000),
         
         vad=ctx.proc.userdata["vad"],
         
@@ -326,8 +326,17 @@ async def my_agent(ctx: JobContext):
         logger.info(">>> Initializing Simli Avatar Session...")
         try:
             from livekit.plugins.simli import SimliConfig, AvatarSession
+            from typing import Any
             
-            simli_config = SimliConfig(
+            # Non-trinity custom avatars don't use/require emotion IDs.
+            # Subclassing SimliConfig to send only the raw face_id without appending the default emotion ID suffix.
+            class CustomSimliConfig(SimliConfig):
+                def create_json(self) -> dict[str, Any]:
+                    result = super().create_json()
+                    result["faceId"] = self.face_id
+                    return result
+            
+            simli_config = CustomSimliConfig(
                 api_key=simli_key,
                 face_id=simli_face_id,
                 max_session_length=2400, # Match interview length

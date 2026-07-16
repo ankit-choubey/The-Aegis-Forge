@@ -1,30 +1,15 @@
 <div align="center">
   <h1>Aegis Forge</h1>
   <p><em>Real-Time Multi-Agent AI Interview Platform for Technical Hiring</em></p>
-
+  
   <p>
-    <img src="https://img.shields.io/github/stars/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Stars" />
-    <img src="https://img.shields.io/github/forks/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Forks" />
-    <img src="https://img.shields.io/github/issues/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="GitHub Issues" />
-    <img src="https://img.shields.io/github/license/ankit-choubey/Aegis-Forge-Agent?style=for-the-badge" alt="License" />
-  </p>
-
-  <p>
-    <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-    <img src="https://img.shields.io/badge/FastAPI-API-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-    <img src="https://img.shields.io/badge/Next.js-16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js" />
-    <img src="https://img.shields.io/badge/LiveKit-Agents-1F5FFF?style=for-the-badge&logo=livekit&logoColor=white" alt="LiveKit" />
-    <img src="https://img.shields.io/badge/Groq-LLM-F55036?style=for-the-badge&logo=databricks&logoColor=white" alt="Groq" />
-    <img src="https://img.shields.io/badge/Deepgram-STT%2FTTS-13B5EA?style=for-the-badge&logo=voicemod&logoColor=white" alt="Deepgram" />
-    <img src="https://img.shields.io/badge/TypeScript-Frontend-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" />
-  </p>
-
-  <p>
-    <a href="#-demo">Demo</a> -
-    <a href="#-quickstart">Quickstart</a> -
-    <a href="#-features">Features</a> -
-    <a href="#-architecture">Architecture</a> -
-    <a href="#-api">API</a>
+    <a href="https://fastapi.tiangolo.com"><img src="https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi" alt="FastAPI" /></a>
+    <a href="https://livekit.io"><img src="https://img.shields.io/badge/LiveKit-00E5FF?style=for-the-badge&logo=livekit&logoColor=black" alt="LiveKit" /></a>
+    <a href="https://nextjs.org"><img src="https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs" alt="Next.js" /></a>
+    <a href="https://react.dev"><img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" /></a>
+    <a href="https://www.typescriptlang.org"><img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+    <a href="https://www.python.org"><img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" /></a>
+    <a href="https://tailwindcss.com"><img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" /></a>
   </p>
 </div>
 
@@ -86,17 +71,17 @@ flowchart TD
 
 ## 🛠 Tech Stack
 
-| Layer | Technology | Purpose |
-|:------|:-----------|:--------|
-| Backend API | Python + FastAPI | Resume intake, session APIs, orchestration endpoints |
-| Agent Runtime | LiveKit Agents | Real-time room participation and agent graph execution |
-| LLM | Groq | Interview reasoning, dynamic scenario and response generation |
-| Speech | Deepgram | Speech-to-text and text-to-speech for voice interview loop |
-| Frontend | Next.js 16 + React 19 + TypeScript | Candidate/recruiter UI, room and report surfaces |
-| Styling | Tailwind CSS 4 | Frontend utility-first styling and responsive layouts |
-| Knowledge Layer | Pathway helpers + custom pipeline | Candidate context retrieval and scenario alignment |
-| Reporting | ReportLab + JSON logging | FSIR/feedback PDFs and structured audit outputs |
-| Tooling | uv + Ruff + Mypy + Pytest | Dependency management, linting, typing, and tests |
+| Layer           | Technology                         | Purpose                                                       |
+| :-------------- | :--------------------------------- | :------------------------------------------------------------ |
+| Backend API     | Python + FastAPI                   | Resume intake, session APIs, orchestration endpoints          |
+| Agent Runtime   | LiveKit Agents                     | Real-time room participation and agent graph execution        |
+| LLM             | Groq                               | Interview reasoning, dynamic scenario and response generation |
+| Speech          | Deepgram                           | Speech-to-text and text-to-speech for voice interview loop    |
+| Frontend        | Next.js 16 + React 19 + TypeScript | Candidate/recruiter UI, room and report surfaces              |
+| Styling         | Tailwind CSS 4                     | Frontend utility-first styling and responsive layouts         |
+| Knowledge Layer | Pathway helpers + custom pipeline  | Candidate context retrieval and scenario alignment            |
+| Reporting       | ReportLab + JSON logging           | FSIR/feedback PDFs and structured audit outputs               |
+| Tooling         | uv + Ruff + Mypy + Pytest          | Dependency management, linting, typing, and tests             |
 
 ## ⚡ Quickstart
 
@@ -214,25 +199,25 @@ cd frontend && npm run dev
 
 Internal orchestration and operator-only endpoints are intentionally omitted from this public README.
 
-| Method | Endpoint | Description |
-|:-------|:---------|:------------|
-| GET | / | Health check |
-| POST | /upload-resume | Upload and validate candidate resume |
-| POST | /candidate-login | Candidate authentication |
-| POST | /start-interview | Start interview room/token/dispatch flow |
-| GET | /candidate/{candidate_id} | Candidate lookup |
-| GET | /candidates | List candidates |
-| POST | /mediapipe-metrics | Ingest behavioral telemetry |
-| GET | /mediapipe-metrics/{candidate_id} | Read candidate telemetry |
-| GET | /interview-results/{candidate_id} | Fetch consolidated results |
-| GET | /download-report/{candidate_id} | Download report PDF |
-| GET | /download-qna/{candidate_id} | Download Q&A JSON |
-| GET | /download-feedback/{candidate_id} | Download feedback PDF |
+| Method | Endpoint                          | Description                              |
+| :----- | :-------------------------------- | :--------------------------------------- |
+| GET    | /                                 | Health check                             |
+| POST   | /upload-resume                    | Upload and validate candidate resume     |
+| POST   | /candidate-login                  | Candidate authentication                 |
+| POST   | /start-interview                  | Start interview room/token/dispatch flow |
+| GET    | /candidate/{candidate_id}         | Candidate lookup                         |
+| GET    | /candidates                       | List candidates                          |
+| POST   | /mediapipe-metrics                | Ingest behavioral telemetry              |
+| GET    | /mediapipe-metrics/{candidate_id} | Read candidate telemetry                 |
+| GET    | /interview-results/{candidate_id} | Fetch consolidated results               |
+| GET    | /download-report/{candidate_id}   | Download report PDF                      |
+| GET    | /download-qna/{candidate_id}      | Download Q&A JSON                        |
+| GET    | /download-feedback/{candidate_id} | Download feedback PDF                    |
 
 ## 🔮 Roadmap
 
-- [x] End-to-end resume-to-interview orchestration
-- [x] Multi-agent real-time interview runtime
+- [X] End-to-end resume-to-interview orchestration
+- [X] Multi-agent real-time interview runtime
 - [ ] Live demo deployment with public hosted room experience
 - [ ] Persistent database-backed candidate/session storage
 - [ ] Expanded evaluator rubric and scoring explainability
@@ -263,7 +248,7 @@ Please follow [Conventional Commits](https://www.conventionalcommits.org/).
 
 Distributed under the Proprietary license. See [license.md](legal/license.md) for details.
 
-***
+---
 
 <div align="center">
   <p>Built with 🔥 by <a href="https://github.com/ankit-choubey">Ankit Choubey</a></p>

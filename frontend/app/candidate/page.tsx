@@ -25,7 +25,7 @@ export default function CandidateLogin() {
         setIsLoading(true);
 
         try {
-            const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+            const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
             
             const response = await fetch(`${API_BASE}/candidate-login`, {
                 method: "POST",

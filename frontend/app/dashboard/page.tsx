@@ -863,7 +863,7 @@ export default function DashboardPage() {
         // ============================================
         // SEND PDF TO UTKARSH'S BACKEND
         // ============================================
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
         try {
             const formData = new FormData();
@@ -966,7 +966,7 @@ export default function DashboardPage() {
         setSelectedRole(role);
 
         // Call backend API to update context
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
         const candidateId = profile?.backendData?.candidate_id || profile?.candidate_id;
 
         if (candidateId) {
@@ -991,7 +991,7 @@ export default function DashboardPage() {
     };
 
     const handleDeploy = async () => {
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
         // candidate_id comes from backend response, focus_topics from user selection
         const candidateId = profile?.backendData?.candidate_id || profile?.candidate_id || "unknown";

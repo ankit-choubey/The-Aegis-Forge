@@ -709,7 +709,7 @@ export default function RecruiterPortal() {
         // ============================================
         // POST to backend and set profile
         // ============================================
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
         try {
             const formData = new FormData();
@@ -776,7 +776,7 @@ export default function RecruiterPortal() {
     const handleRoleChange = async (role: string) => {
         setSelectedRole(role);
         // Call backend API to update context
-        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://f6bd14bc925f.ngrok-free.app";
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
         const candidateId = profile?.candidate_id;
         if (candidateId) {
             try {

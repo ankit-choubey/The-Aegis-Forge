@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { useTracks, AudioTrack } from '@livekit/components-react';
+import { useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import Image from 'next/image';
 
 export default function Avatar() {
     const [volume, setVolume] = useState(0);
@@ -68,9 +67,6 @@ export default function Avatar() {
                 const mediaStream = new MediaStream([mediaStreamTrack]);
                 const source = ctx.createMediaStreamSource(mediaStream);
                 source.connect(analyser);
-                // Note: We DO NOT connect to destination here because the <AudioTrack /> component 
-                // below handles the actual playback. Connecting here would cause echo/double audio.
-                // analyser.connect(ctx.destination);
 
                 sourceRef.current = source;
 
@@ -111,52 +107,62 @@ export default function Avatar() {
         };
     }, [agentTrackRef]);
 
-    // Calculate scale scale based on volume
-    // Base scale 1.0, max scale 1.15
-    const scale = 1 + (volume * 0.15);
-
-    // Dynamic glow opacity
-    const glowOpacity = 0.3 + (volume * 0.7);
-
     return (
-        <div className="relative w-full h-full flex items-center justify-center bg-zinc-900 border-b border-zinc-800 overflow-hidden">
-            {/* [FIX] Redundant AudioTrack removed. Global RoomAudioRenderer handles playback. */}
-
-
-            {/* Background Ambient Effect */}
+        <div className="relative w-full h-full flex items-center justify-center bg-[#09090b] border-b border-white/5 overflow-hidden">
+            {/* Background Ambient Glow Effect */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div
-                    className="w-64 h-64 rounded-full bg-cyan-500/10 blur-[60px] transition-all duration-100 ease-out"
+                    className="w-80 h-80 rounded-full bg-cyan-500/10 blur-[80px] transition-all duration-100 ease-out"
                     style={{
-                        opacity: glowOpacity,
-                        transform: `scale(${1 + volume * 0.5})`
+                        opacity: 0.3 + volume * 0.7,
+                        transform: `scale(${1 + volume * 0.6})`
                     }}
-                ></div>
-
+                />
                 <div
-                    className="absolute w-48 h-48 rounded-full bg-blue-600/10 blur-[40px] transition-all duration-100 ease-out"
+                    className="absolute w-64 h-64 rounded-full bg-blue-600/10 blur-[60px] transition-all duration-100 ease-out"
                     style={{
-                        opacity: glowOpacity,
-                        transform: `scale(${1 + volume * 0.3})`
+                        opacity: 0.2 + volume * 0.8,
+                        transform: `scale(${1 + volume * 0.4})`
                     }}
-                ></div>
+                />
             </div>
 
-            {/* Avatar Image container with dynamic scaling */}
-            <div
-                className="relative z-10 w-64 h-64 transition-transform duration-75 ease-out will-change-transform"
-                style={{ transform: `scale(${scale})` }}
+            {/* Pulsing AI Core (Orb) */}
+            <div 
+                className="relative z-10 flex items-center justify-center transition-transform duration-75 ease-out will-change-transform"
+                style={{ transform: `scale(${1 + volume * 0.2})` }}
             >
-                {/* 
-                  Using DiceBear Avataaars. 
-                  Seed 'Aegis' gives a consistent look. 
-                  You can change the seed to anything.
-                */}
-                <img
-                    src="https://api.dicebear.com/9.x/avataaars/svg?seed=Felix&backgroundColor=transparent"
-                    alt="AI Interviewer"
-                    className="w-full h-full object-contain drop-shadow-2xl"
-                />
+                {/* Outer Spinning Dashed Ring */}
+                <div className="absolute w-56 h-56 rounded-full border border-dashed border-cyan-500/30 animate-[spin_20s_linear_infinite]" />
+                
+                {/* Inner Spinning Dotted Ring */}
+                <div className="absolute w-48 h-48 rounded-full border border-dotted border-blue-400/40 animate-[spin_10s_linear_infinite_reverse]" />
+                
+                {/* Core Glowing Orb */}
+                <div 
+                    className="w-36 h-36 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 flex flex-col items-center justify-center shadow-[0_0_50px_rgba(6,182,212,0.5)] transition-shadow duration-100 relative overflow-hidden"
+                    style={{
+                        boxShadow: `0 0 ${40 + volume * 60}px rgba(6,182,212,${0.5 + volume * 0.5})`
+                    }}
+                >
+                    {/* Inner glowing particle container */}
+                    <div className="absolute inset-1.5 rounded-full bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center border border-white/10">
+                        {/* Dynamic Voice Pulse Circle */}
+                        <div 
+                            className="absolute rounded-full bg-cyan-400/10 transition-all duration-75"
+                            style={{
+                                width: `${40 + volume * 100}%`,
+                                height: `${40 + volume * 100}%`,
+                            }}
+                        />
+                        <span className="relative z-10 text-cyan-400 font-mono text-sm tracking-[0.3em] font-bold animate-pulse">
+                            AEGIS
+                        </span>
+                        <span className="relative z-10 text-[9px] font-mono text-zinc-500 mt-1.5 uppercase tracking-widest">
+                            {volume > 0.05 ? "speaking" : "listening"}
+                        </span>
+                    </div>
+                </div>
             </div>
 
             {/* Status Indicators */}
@@ -169,7 +175,7 @@ export default function Avatar() {
                 </div>
             </div>
 
-            {/* Optional: Add a subtle Scanline effect */}
+            {/* Scanline overlay */}
             <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-20 bg-[length:100%_4px,3px_100%] pointer-events-none opacity-20"></div>
         </div>
     );

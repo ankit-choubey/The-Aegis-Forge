@@ -863,8 +863,10 @@ const RoomContent = ({
     ]);
     const [hasSyncedHistory, setHasSyncedHistory] = useState(false); // Track if we got history
     const [msgInput, setMsgInput] = useState("");
-    const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+    const [activePanel, setActivePanel] = useState<ActivePanel>("terminal");
     const [isRecruiterTakeover, setIsRecruiterTakeover] = useState(false);
+    const [moleAlert, setMoleAlert] = useState<{ text: string } | null>(null);
+    const [crisisAlert, setCrisisAlert] = useState<{ title: string; message: string } | null>(null);
     const messageSeqRef = useRef(0);
 
     const getTimestamp = () => new Date().toLocaleTimeString();
@@ -908,7 +910,14 @@ const RoomContent = ({
                 // [BUG FIX] Dispatch Mole popup via CustomEvent so Mole component can show it
                 if (data.type === "MOLE_POPUP") {
                     console.log("[MOLE POPUP RX]", data.text);
+                    setMoleAlert({ text: data.text });
                     window.dispatchEvent(new CustomEvent('mole-message', { detail: data.text }));
+                }
+
+                // Handle Crisis Popups from backend
+                if (data.type === "CRISIS_POPUP") {
+                    console.log("[CRISIS POPUP RX]", data.title, data.message);
+                    setCrisisAlert({ title: data.title, message: data.message });
                 }
 
                 // Listen for INTERVIEW_END signal from backend
@@ -1090,6 +1099,62 @@ const RoomContent = ({
             {/* Audio Renderer for LiveKit */}
             {/* Audio Renderer for LiveKit */}
             <RoomAudioRenderer />
+
+            {/* Mole Security Alert Modal */}
+            {moleAlert && (
+                <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                    <div className="bg-[#0c0505] border border-red-500/50 shadow-[0_0_50px_rgba(239,68,68,0.3)] max-w-md w-full rounded-lg overflow-hidden relative p-6 animate-in fade-in zoom-in duration-300">
+                        {/* Glowing red top bar */}
+                        <div className="absolute top-0 inset-x-0 h-1 bg-red-500 animate-pulse" />
+                        
+                        <div className="flex items-center gap-3 text-red-500 font-mono font-bold text-base mb-4">
+                            <AlertTriangle className="w-5 h-5 animate-bounce" />
+                            <span>:: SECURITY AUDIT: MOLE DETECTED ::</span>
+                        </div>
+
+                        <p className="text-zinc-300 text-sm font-mono leading-relaxed mb-6 bg-red-950/20 border border-red-900/20 p-3 rounded">
+                            {moleAlert.text}
+                        </p>
+
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={() => setMoleAlert(null)}
+                                className="px-5 py-2 bg-red-950 border border-red-500/40 text-red-400 hover:bg-red-500 hover:text-white font-mono text-xs uppercase tracking-widest transition-all rounded shadow-md"
+                            >
+                                Acknowledge threat
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Crisis Alert Modal */}
+            {crisisAlert && (
+                <div className="absolute inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-center justify-center p-4">
+                    <div className="bg-[#0b0805] border border-amber-500/50 shadow-[0_0_50px_rgba(245,158,11,0.3)] max-w-md w-full rounded-lg overflow-hidden relative p-6 animate-in fade-in zoom-in duration-300">
+                        {/* Glowing amber top bar */}
+                        <div className="absolute top-0 inset-x-0 h-1 bg-amber-500 animate-pulse" />
+                        
+                        <div className="flex items-center gap-3 text-amber-500 font-mono font-bold text-base mb-4">
+                            <Zap className="w-5 h-5 animate-pulse" />
+                            <span>{crisisAlert.title || "⚠️ CRITICAL SYSTEM FAIL"}</span>
+                        </div>
+
+                        <p className="text-zinc-300 text-sm font-mono leading-relaxed mb-6 bg-amber-950/20 border border-amber-900/20 p-3 rounded">
+                            {crisisAlert.message}
+                        </p>
+
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={() => setCrisisAlert(null)}
+                                className="px-5 py-2 bg-amber-950 border border-amber-500/40 text-amber-400 hover:bg-amber-500 hover:text-white font-mono text-xs uppercase tracking-widest transition-all rounded shadow-md"
+                            >
+                                Initialize Incident Response
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Start Audio Button (Vital for browser autoplay logic) */}
             <StartAudio
